@@ -12,23 +12,11 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nomodit",
-	Short: "A CLI tool for performant text enhancement w/ punctuation correction and synonym suggestions",
-	Long: `This CLI tool empowers users to edit and enhance their text by providing punctuation 
-corrections and synonym suggestions. It prioritizes user control by allowing interactive 
-synonym selection for non-stop words, enabling the creation of customized and polished text.
-
-Features:
-  • Punctuation Correction: Automatically adjusts punctuation errors in user-input text
-    for clarity and correctness
-  • Synonym Suggestions: Highlights non-stop words and provides interactive synonym
-    selection
-  • Editable Output: Outputs the corrected and customized text ready for use
-
-The tool combines Go's performance with Python's NLP capabilities to provide an efficient
-and user-friendly text enhancement experience.`,
+	Short: "",
+	Long:  ``,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	// Run: func(cmd *cobra.Command, args []string) { }
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
