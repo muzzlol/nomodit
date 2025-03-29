@@ -1,5 +1,5 @@
 def main():
-    print("Hello from nlp!")
+    print("Hello from training!")
 
 
 if __name__ == "__main__":
