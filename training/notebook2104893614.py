@@ -25,7 +25,7 @@ import torch
 
 model, tokenizer = FastModel.from_pretrained(
     model_name = "unsloth/gemma-3-4b-it-unsloth-bnb-4bit",
-    max_seq_length = 2048, # Choose any for long context!
+    max_seq_length = 256, # Reduced based on data analysis (99th percentile 132)
     load_in_4bit = True,  # 4 bit quantization to reduce memory
     load_in_8bit = False,
     full_finetuning = False,
@@ -84,6 +84,17 @@ except ValueError as e:
 print(train_ds)
 print(val_ds)
 
+"""o/p:
+Dataset({
+    features: ['_id', 'task', 'src', 'tgt'],
+    num_rows: 69071
+})
+Dataset({
+    features: ['_id', 'task', 'src', 'tgt'],
+    num_rows: 1712
+})
+"""
+
 def format_dataset_with_template(example, tokenizer):
 
     src_txt = example["src"]
@@ -128,6 +139,16 @@ processed_val_ds = val_ds.map(
 print(processed_train_ds)
 print(processed_val_ds)
 
+"""o/p:
+Dataset({
+    features: ['_id', 'task', 'src', 'tgt', 'text'],
+    num_rows: 69071
+})
+Dataset({
+    features: ['_id', 'task', 'src', 'tgt', 'text'],
+    num_rows: 1712
+})"""
+
 # removing original columns
 columns_to_remove = list(train_ds.features)
 print(f"\nRemoving original columns: {columns_to_remove}")
@@ -149,10 +170,35 @@ if len(processed_val_ds) > 0:
 else:
     print("Processed validation dataset is empty or first example failed.")
 
-"""<a name="Train"></a>
-### Train the model
-Now let's use Huggingface TRL's `SFTTrainer`! More docs here: [TRL SFT docs](https://huggingface.co/docs/trl/sft_trainer). We do 60 steps to speed things up, but you can set `num_train_epochs=1` for a full run, and turn off `max_steps=None`.
+
+"""o/p:
+
+Processed train dataset sample (using tokenizer template):
+Dataset({
+    features: ['text'],
+    num_rows: 69071
+})
+<start_of_turn>user
+Remove all grammatical errors from this text: For example, countries with a lot of deserts can terraform their desert to increase their habitable land and using irrigation to provide clean water to the desert.<end_of_turn>
+<start_of_turn>model
+For example, countries with a lot of deserts can transform their desert to increase their habitable land and use irrigation to provide clean water to the desert.<end_of_turn>
+
+
+Processed validation dataset sample (using tokenizer template):
+Dataset({
+    features: ['text'],
+    num_rows: 1712
+})
+<start_of_turn>user
+Paraphrase this sentence: Why are you arresting me?<end_of_turn>
+<start_of_turn>model
+Why am I being arrested?<end_of_turn>
 """
+
+'''
+### Train the model
+Now let's use Huggingface TRL's `SFTTrainer`! More docs here: [TRL SFT docs](https://huggingface.co/docs/trl/sft_trainer).
+'''
 
 from trl import SFTTrainer, SFTConfig
 trainer = SFTTrainer(
@@ -161,19 +207,26 @@ trainer = SFTTrainer(
     train_dataset = processed_train_ds,
     eval_dataset = processed_val_ds,
     args = SFTConfig(
+        output_dir = "./results-seq256", 
         dataset_text_field = "text",
-        per_device_train_batch_size = 2,
-        gradient_accumulation_steps = 4, # Use GA to mimic batch size!
-        warmup_steps = 5,
-        # num_train_epochs = 1, # Set this for 1 full training run.
-        max_steps = 30,
-        learning_rate = 2e-4, # Reduce to 2e-5 for long training runs
-        logging_steps = 1,
+        max_seq_length = 256,            
+        packing = True,                  
+        per_device_train_batch_size = 16,
+        gradient_accumulation_steps = 2, # Adjusted for effective BS = 32
+        warmup_steps = 100,             
+        num_train_epochs = 1,            
+        max_steps = None,                
+        learning_rate = 2e-5,          
+        logging_steps = 50,            
         optim = "adamw_8bit",
         weight_decay = 0.01,
         lr_scheduler_type = "linear",
         seed = 3407,
-        report_to = "none", # Use this for WandB etc
+        report_to = "none",            
+        evaluation_strategy = "steps",   
+        eval_steps = 100,                
+        save_strategy = "steps",         
+        save_steps = 100,                
     ),
 )
 
@@ -198,13 +251,51 @@ print(trainer.train_dataset[100]["attention_mask"])
 print()
 print(trainer.train_dataset[100]["labels"])
 
-"""Let's verify masking the instruction part is done! Let's print the 100th row again:"""
 
-tokenizer.decode(trainer.train_dataset[100]["input_ids"])
+"""o/p:
+<start_of_turn>user
+Fix grammar in this sentence: If engineers do not come up with new ideas, they cannot find best solution for the problems.<end_of_turn>
+<start_of_turn>model
+If engineers do not come up with new ideas, they cannot find the best solution for different problems.<end_of_turn>
 
-"""Now let's print the masked out example - you should see only the answer is present:"""
 
-tokenizer.decode([tokenizer.pad_token_id if x == -100 else x for x in trainer.train_dataset[100]["labels"]]).replace(tokenizer.pad_token, " ")
+[105, 2364, 107, 36819, 40095, 528, 672, 13315, 236787, 1637, 22072, 776, 711, 2229, 872, 607, 861, 6549, 236764, 901, 3914, 1586, 1791, 3465, 573, 506, 4078, 236761, 106, 107, 105, 4368, 107, 2859, 22072, 776, 711, 2229, 872, 607, 861, 6549, 236764, 901, 3914, 1586, 506, 1791, 3465, 573, 1607, 4078, 236761, 106, 107]
+
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+[-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, 2859, 22072, 776, 711, 2229, 872, 607, 861, 6549, 236764, 901, 3914, 1586, 506, 1791, 3465, 573, 1607, 4078, 236761, 106, 107]
+"""
+
+total_training_tokens = 0
+for i in range(trainer.train_dataset.num_rows):
+    total_training_tokens += len(trainer.train_dataset[i]["input_ids"])
+    
+print("Total training tokens in CoEdIT dataset:", total_training_tokens)
+
+"""o/p:
+Total training tokens in CoEdIT dataset: 3994943
+"""
+
+import numpy as np
+
+lengths = [len(x) for x in trainer.train_dataset['input_ids']]
+print(f"Token lengths stats:")
+print(f"Min: {np.min(lengths)}")
+print(f"Max: {np.max(lengths)}")
+print(f"Mean: {np.mean(lengths)}")
+print(f"Median: {np.median(lengths)}")
+print(f"95th percentile: {np.percentile(lengths, 95)}")
+print(f"99th percentile: {np.percentile(lengths, 99)}")
+
+""""o/p:
+Token lengths stats:
+Min: 17
+Max: 686
+Mean: 57.83820995786944
+Median: 51.0
+95th percentile: 107.0
+99th percentile: 132.0
+"""
 
 # @title Show current memory stats
 gpu_stats = torch.cuda.get_device_properties(0)
@@ -231,6 +322,8 @@ print(f"Peak reserved memory for training = {used_memory_for_lora} GB.")
 print(f"Peak reserved memory % of max memory = {used_percentage} %.")
 print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
 
+
+# TODO: need to adjust previous code to my task and model
 """<a name="Inference"></a>
 ### Inference
 Let's run the model via Unsloth native inference! According to the `Gemma-3` team, the recommended settings for inference are `temperature = 1.0, top_p = 0.95, top_k = 64`
@@ -298,7 +391,7 @@ if False:
     from unsloth import FastModel
     model, tokenizer = FastModel.from_pretrained(
         model_name = "lora_model", # YOUR MODEL YOU USED FOR TRAINING
-        max_seq_length = 2048,
+        max_seq_length = 256,      # Updated to match training length
         load_in_4bit = True,
     )
 
