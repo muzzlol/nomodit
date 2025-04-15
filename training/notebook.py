@@ -319,7 +319,7 @@ _ = model.generate(
 if True:
     hf_repo_name = "muzzz/nomodit-4b-merged" 
     # token w/ write access
-    hf_token = "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"
+    hf_token = ""
     
     print(f"Attempting to push merged model to: {hf_repo_name}")
     try:

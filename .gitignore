@@ -21,6 +21,7 @@
 go.work
 go.work.sum
 
+
 # env file
 .env
 
@@ -28,24 +29,25 @@ go.work.sum
 nomodit_desc.text
 
 ## Python ignores 
-nlp/**/*.pyc
-nlp/**/__pycache__/
-nlp/**/*.pyo
-nlp/**/*.pyd
-nlp/**/.Python
-nlp/**/env/
-nlp/**/venv/
-nlp/**/.venv/
-nlp/**/pip-log.txt
-nlp/**/pip-delete-this-directory.txt
-nlp/**/.tox/
-nlp/**/.coverage
-nlp/**/.coverage.*
-nlp/**/.cache
-nlp/**/nosetests.xml
-nlp/**/coverage.xml
-nlp/**/*.cover
-nlp/**/*.log
-nlp/**/.mypy_cache/
-nlp/**/.pytest_cache/
-nlp/**/.hypothesis/
+training/**/*.pyc
+training/**/__pycache__/
+training/**/*.pyo
+training/**/*.pyd
+training/**/.Python
+training/**/myenv
+training/**/env/
+training/**/venv/
+training/**/.venv/
+training/**/pip-log.txt
+training/**/pip-delete-this-directory.txt
+training/**/.tox/
+training/**/.coverage
+training/**/.coverage.*
+training/**/.cache
+training/**/nosetests.xml
+training/**/coverage.xml
+training/**/*.cover
+training/**/*.log
+training/**/.mypy_cache/
+training/**/.pytest_cache/
+training/**/.hypothesis/
