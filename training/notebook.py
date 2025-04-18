@@ -1,10 +1,4 @@
-"""notebook2104893614
-    this is the python file of a finetuning notebook on kaggle with 2xT4 GPU
-"""
-
-# !pip install unsloth
-
-# !pip install vllm
+# !pip install unsloth vllm
 
 # !pip install --no-deps git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3
 
@@ -32,9 +26,9 @@ model = FastModel.get_peft_model(
     finetune_attention_modules = True,  # Attention good
     finetune_mlp_modules       = True,  # SHould leave on always!
 
-    r = 32,           # Larger = higher accuracy, but no significant improvements relative to compute inc. check LoRA paper
+    r = 16,           # Larger = higher accuracy, but no significant improvements relative to compute inc. check LoRA paper
     lora_alpha = 32,  # Recommended alpha == r at least
-    lora_dropout = 0,
+    lora_dropout = 0.1,
     bias = "none",
     random_state = 3407,
 )
@@ -173,36 +167,36 @@ Why am I being arrested?<end_of_turn>
 ### Train the model
 Now let's use Huggingface TRL's `SFTTrainer`! More docs here: [TRL SFT docs](https://huggingface.co/docs/trl/sft_trainer).
 '''
-
 from trl import SFTTrainer, SFTConfig
+
 trainer = SFTTrainer(
-    model = model,
-    tokenizer = tokenizer,
-    train_dataset = processed_train_ds,
-    eval_dataset = processed_val_ds,
-    args = SFTConfig(
-        output_dir = "./results-seq256", 
-        dataset_text_field = "text",
-        max_seq_length = 256,            
-        packing = True,                  
-        per_device_train_batch_size = 64,
-        gradient_accumulation_steps = 2, # for wahtever reason unsloth is 2x the effective batch size (128) so bs = 256
-        warmup_steps = 100,             
-        num_train_epochs = 1,            
-        max_steps = None,                
-        learning_rate = 2e-5,          
-        logging_steps = 20,            
-        optim = "adamw_8bit",
-        weight_decay = 0.01,
-        lr_scheduler_type = "linear",
-        seed = 3407,
-        report_to = "none",            
-        eval_strategy = "steps",   
-        eval_steps = 20,                
-        save_strategy = "steps",         
-        save_steps = 100,                
-    ),
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=processed_train_ds,
+    eval_dataset=processed_val_ds,
+    args=SFTConfig(
+        output_dir="./checkpoints256",
+        dataset_text_field="text",
+        max_seq_length=256,
+        packing=True,
+        per_device_train_batch_size=64,
+        gradient_accumulation_steps=2,
+        warmup_steps=100,
+        num_train_epochs=1,
+        learning_rate=3e-5,
+        logging_steps=25,
+        optim="adamw_8bit",
+        weight_decay=0.01,
+        lr_scheduler_type="linear",
+        seed=3407,
+        report_to="none",
+        eval_strategy="steps",
+        eval_steps=25,
+        save_strategy="steps",
+        save_steps=25,
+    )
 )
+
 
 print(trainer.train_dataset)
 
