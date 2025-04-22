@@ -8,7 +8,9 @@ Original file is located at
 """
 
 # print("Installing libraries...")
-# !uv pip install llama-cpp-python errant --quiet --prerelease allow
+# !uv pip install llama-cpp-python \
+#   --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121 --quiet --prerelease allow
+# !uv pip install errant --quiet --prerelease allow
 # !python -m spacy download en_core_web_sm --quiet
 
 from llama_cpp import Llama
@@ -163,7 +165,7 @@ class LLM:
             repo_id=repo_id,
             filename=filename,
             verbose=verbose,
-            n_gpu_layers=-1,
+            n_gpu_layers=n_gpu_layers,
             **kwargs,
         )
         print(f"{self.model_name} initialized.")
@@ -209,7 +211,8 @@ class LLM:
 
 llm_instances = {
     "gemma-3-4b-it": LLM("unsloth/gemma-3-4b-it-GGUF", filename="*Q4_K_M.gguf", verbose=False),
-    "nomodit-4b": LLM("muzzz/nomodit-4b-merged-v0-Q4_K_M-GGUF", filename="*q4_k_m.gguf", verbose=False), # Assuming common params are ok
+    "nomodit-4b-v0": LLM("muzzz/nomodit-4b-merged-v0-Q4_K_M-GGUF", filename="*q4_k_m.gguf", verbose=False, GEC_PROOMPT = "Fix grammaticality in this sentence:"), # Assuming common params are ok
+    "nomodit-4b": LLM("muzzz/nomodit-4b-merged-Q4_K_M-GGUF", filename="*q4_k_m.gguf", verbose=False, GEC_PROOMPT = "Fix grammaticality in this sentence:"),
     # "phi-4-mini-instruct": LLM("unsloth/Phi-4-mini-instruct-GGUF", filename="*Q4_K_M.gguf", verbose=False),
     # "phi-4": LLM("unsloth/phi-4-GGUF", filename="*Q4_K_M.gguf", verbose=False),
     # "llama-3.1-8B-Instruct": LLM("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", filename="*Q4_K_M.gguf", verbose=False),
@@ -220,7 +223,8 @@ llm_instances = {
 
 models_to_benchmark_names = [
     "gemma-3-4b-it",
-    "nomodit-4b"
+    "nomodit-4b-v0",
+    "nomodit-4b",
     # "phi-4-mini-instruct",
     # "phi-4",
     # "llama-3.1-8B-Instruct",
