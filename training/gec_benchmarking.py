@@ -31,7 +31,7 @@ def detokenize_bea(text: str) -> str:
     """
     Convert BEA‑style tokenisation to normal English prose.
     """
-    text = text.replace("’", "'")
+    text = text.replace("'","'")
     # 1. Join contractions
     #   e.g. "do n't"  -> "don't"
     #        "she 'll" -> "she'll"
@@ -42,7 +42,7 @@ def detokenize_bea(text: str) -> str:
         text    = re.sub(pattern, repl, text)
 
     # 2. Collapse space BEFORE punctuation  ( ... "word ." -> "word." )
-    #  – only collapse if it’s a *single* normal blank, keep new‑lines
+    #  – only collapse if it's a *single* normal blank, keep new‑lines
     text = re.sub(r" (?=[{}])".format(PUNCT), "", text)
 
     # 3. Clean spaces just inside brackets  : "( word" -> "(word"
@@ -63,7 +63,7 @@ def tokenize_like_bea(text: str) -> str:
     (Not 100 % identical for every imaginable corner‑case, but round‑trips
      correctly for the typical patterns in the dataset.)
     """
-    text = text.replace("’", "'")
+    text = text.replace("'","'")
     # 1. Split contractions      e.g. "don't" -> "do n't"
     # n't must be done first because "won't" → "wo n't", not "wo n' t"
     text = re.sub(r"\b(\w+)n't\b",  r"\1 n't", text)
@@ -207,16 +207,31 @@ class LLM:
         return results
 
 # --- Model Initialization ---
-# Using Q4_K_M for potentially faster eval runs
-
-llm_instances = {
-    "gemma-3-4b-it": LLM("unsloth/gemma-3-4b-it-GGUF", filename="*Q4_K_M.gguf", verbose=False),
-    "nomodit-4b-v0": LLM("muzzz/nomodit-4b-merged-v0-Q4_K_M-GGUF", filename="*q4_k_m.gguf", verbose=False, GEC_PROOMPT = "Fix grammaticality in this sentence:"), # Assuming common params are ok
-    "nomodit-4b": LLM("muzzz/nomodit-4b-merged-Q4_K_M-GGUF", filename="*q4_k_m.gguf", verbose=False, GEC_PROOMPT = "Fix grammaticality in this sentence:"),
-    # "phi-4-mini-instruct": LLM("unsloth/Phi-4-mini-instruct-GGUF", filename="*Q4_K_M.gguf", verbose=False),
-    # "phi-4": LLM("unsloth/phi-4-GGUF", filename="*Q4_K_M.gguf", verbose=False),
-    # "llama-3.1-8B-Instruct": LLM("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", filename="*Q4_K_M.gguf", verbose=False),
-    # "llama-3.2-3B-Instruct": LLM("unsloth/Llama-3.2-3B-Instruct-GGUF", filename="*Q4_K_M.gguf", verbose=False),
+# Define configurations instead of loading immediately
+model_configs = {
+    "gemma-3-4b-it": {
+        "repo_id": "unsloth/gemma-3-4b-it-GGUF",
+        "filename": "*Q4_K_M.gguf",
+        "verbose": False,
+        "gec_prompt": GEC_PROOMPT # Use the global GEC_PROOMPT
+    },
+    "nomodit-4b-v0": {
+        "repo_id": "muzzz/nomodit-4b-merged-v0-Q4_K_M-GGUF",
+        "filename": "*q4_k_m.gguf",
+        "verbose": False,
+        "gec_prompt": "Fix grammaticality in this sentence:" # Specific prompt for this model
+    },
+    "nomodit-4b": {
+        "repo_id": "muzzz/nomodit-4b-merged-Q4_K_M-GGUF",
+        "filename": "*q4_k_m.gguf",
+        "verbose": False,
+        "gec_prompt": "Fix grammaticality in this sentence:" # Specific prompt for this model
+    },
+    # Add configurations for commented-out models if you plan to use them later
+    # "phi-4-mini-instruct": {"repo_id": "unsloth/Phi-4-mini-instruct-GGUF", "filename": "*Q4_K_M.gguf", "verbose": False, "gec_prompt": GEC_PROOMPT},
+    # "phi-4": {"repo_id": "unsloth/phi-4-GGUF", "filename": "*Q4_K_M.gguf", "verbose": False, "gec_prompt": GEC_PROOMPT},
+    # "llama-3.1-8B-Instruct": {"repo_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", "filename": "*Q4_K_M.gguf", "verbose": False, "gec_prompt": GEC_PROOMPT},
+    # "llama-3.2-3B-Instruct": {"repo_id": "unsloth/Llama-3.2-3B-Instruct-GGUF", "filename": "*Q4_K_M.gguf", "verbose": False, "gec_prompt": GEC_PROOMPT},
 }
 
 # --- Benchmarking ---
@@ -266,20 +281,24 @@ else:
 
 
 for model_key in models_to_benchmark_names:
-    llm = llm_instances.get(model_key)
-    if not llm:
-        print(f"Warning: Model key '{model_key}' not found in initialized instances. Skipping.")
+    config = model_configs.get(model_key)
+    if not config:
+        print(f"Warning: Model key '{model_key}' not found in model configurations. Skipping.")
         continue
 
-    model_name = llm.model_name # Use name from LLM object for consistency
-    print(f"\n===== Evaluating model: {model_name} =====")
-
-    # Paths for temporary files specific to this model iteration
-    temp_orig_bea_path = None
-    temp_cor_bea_path = None
-    temp_hyp_m2_path = None
-
+    # Initialize LLM object here, inside the loop
+    print(f"\n===== Loading model: {model_key} =====\n")
+    llm = None # Initialize llm to None
     try:
+        llm = LLM(**config) # Load the model using its specific config
+        model_name = llm.model_name # Use name from LLM object
+        print(f"\n===== Evaluating model: {model_name} =====")
+
+        # Paths for temporary files specific to this model iteration
+        temp_orig_bea_path = None
+        temp_cor_bea_path = None
+        temp_hyp_m2_path = None
+
         # --- Create temporary file for ORIGINAL sentences (BEA format) --- #
         # This file is needed as -orig input for errant_parallel
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".txt", encoding='utf-8') as temp_orig_file:
@@ -318,78 +337,98 @@ for model_key in models_to_benchmark_names:
         if len(corrected_sentences_bea) != len(original_sentences_bea):
             print(f"Error: Number of corrected sentences ({len(corrected_sentences_bea)}) does not match original ({len(original_sentences_bea)}) for model {model_name}. Skipping evaluation.")
             results[model_name] = {"P": "Error", "R": "Error", "F0.5": "Length Mismatch", "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": "N/A"}
-            continue # Skip to the next model
+            # No 'continue' here, need to go to finally block
 
-        eval_start_time = time.time()
+        else: # Only run eval if lengths match
+            eval_start_time = time.time()
 
-        # 3. Write RETOKENIZED CORRECTED sentences (BEA format) to a temporary file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".cor.txt", encoding='utf-8') as temp_cor_file:
-            for sentence in corrected_sentences_bea: # Write the BEA format sentences
-                temp_cor_file.write(sentence + '\n')
-            temp_cor_bea_path = temp_cor_file.name
-        print(f"Created temp corrected (BEA format): {temp_cor_bea_path}")
+            # 3. Write RETOKENIZED CORRECTED sentences (BEA format) to a temporary file
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".cor.txt", encoding='utf-8') as temp_cor_file:
+                for sentence in corrected_sentences_bea: # Write the BEA format sentences
+                    temp_cor_file.write(sentence + '\n')
+                temp_cor_bea_path = temp_cor_file.name
+            print(f"Created temp corrected (BEA format): {temp_cor_bea_path}")
 
 
-        # 4. Create hypothesis M2 file using errant_parallel
-        #    Input: -orig (BEA format), -cor (BEA format)
-        #    Output: hypothesis M2 (ERRANT will likely re-tokenize internally based on spaCy,
-        #            but we feed it BEA format for consistency at this step)
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".hyp.m2") as temp_hyp_m2_file:
-            temp_hyp_m2_path = temp_hyp_m2_file.name
+            # 4. Create hypothesis M2 file using errant_parallel
+            #    Input: -orig (BEA format), -cor (BEA format)
+            #    Output: hypothesis M2 (ERRANT will likely re-tokenize internally based on spaCy,
+            #            but we feed it BEA format for consistency at this step)
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".hyp.m2") as temp_hyp_m2_file:
+                temp_hyp_m2_path = temp_hyp_m2_file.name
 
-        print(f"Running errant_parallel... Orig: {temp_orig_bea_path}, Cor: {temp_cor_bea_path}, Out: {temp_hyp_m2_path}")
-        parallel_cmd = ["errant_parallel", "-orig", temp_orig_bea_path, "-cor", temp_cor_bea_path, "-out", temp_hyp_m2_path]
-        parallel_result = subprocess.run(parallel_cmd, capture_output=True, text=True, check=False)
+            print(f"Running errant_parallel... Orig: {temp_orig_bea_path}, Cor: {temp_cor_bea_path}, Out: {temp_hyp_m2_path}")
+            parallel_cmd = ["errant_parallel", "-orig", temp_orig_bea_path, "-cor", temp_cor_bea_path, "-out", temp_hyp_m2_path]
+            parallel_result = subprocess.run(parallel_cmd, capture_output=True, text=True, check=False)
 
-        if parallel_result.returncode != 0:
-            print(f"Error running errant_parallel for {model_name}:")
-            print(f"Stderr: {parallel_result.stderr}")
-            results[model_name] = {"P": "Error", "R": "Error", "F0.5": "errant_parallel failed", "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": "N/A"}
-            continue # Skip to next model
-        if "Processing 0 sentences" in parallel_result.stderr: # Check if ERRANT processed anything
-             print(f"Warning: errant_parallel reported processing 0 sentences. Check input files or ERRANT setup.")
-             print(f"Stderr: {parallel_result.stderr}")
-             # Decide whether to continue or mark as error
+            if parallel_result.returncode != 0:
+                print(f"Error running errant_parallel for {model_name}:")
+                print(f"Stderr: {parallel_result.stderr}")
+                results[model_name] = {"P": "Error", "R": "Error", "F0.5": "errant_parallel failed", "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": "N/A"}
+                # No 'continue' here, need to go to finally block
 
-        # 5. Compare hypothesis M2 with reference M2 using errant_compare
-        #    Input: -hyp (Generated M2), -ref (BEA Reference M2 - potentially subsetted)
-        print(f"Running errant_compare... Hyp: {temp_hyp_m2_path}, Ref: {reference_m2_to_use}")
-        compare_cmd = ["errant_compare", "-hyp", temp_hyp_m2_path, "-ref", reference_m2_to_use]
-        compare_result = subprocess.run(compare_cmd, capture_output=True, text=True, check=False)
+            elif "Processing 0 sentences" in parallel_result.stderr: # Check if ERRANT processed anything
+                 print(f"Warning: errant_parallel reported processing 0 sentences. Check input files or ERRANT setup.")
+                 print(f"Stderr: {parallel_result.stderr}")
+                 # Decide whether to continue or mark as error - currently just warns
+                 results[model_name] = {"P": "N/A", "R": "N/A", "F0.5": "ERRANT processed 0", "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": "N/A"}
 
-        if compare_result.returncode != 0:
-            print(f"Error running errant_compare for {model_name}:")
-            print(f"Stderr: {compare_result.stderr}")
-            results[model_name] = {"P": "Error", "R": "Error", "F0.5": "errant_compare failed", "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": "N/A"}
-            continue # Skip to next model
+            else:
+                # 5. Compare hypothesis M2 with reference M2 using errant_compare
+                #    Input: -hyp (Generated M2), -ref (BEA Reference M2 - potentially subsetted)
+                print(f"Running errant_compare... Hyp: {temp_hyp_m2_path}, Ref: {reference_m2_to_use}")
+                compare_cmd = ["errant_compare", "-hyp", temp_hyp_m2_path, "-ref", reference_m2_to_use]
+                compare_result = subprocess.run(compare_cmd, capture_output=True, text=True, check=False)
 
-        # 6. Parse scores
-        eval_time = time.time() - eval_start_time
-        print(f"Evaluation took: {eval_time:.2f} seconds")
-        # print(f"errant_compare output for {model_name}:\n{compare_result.stdout}") # Uncomment for debugging
+                if compare_result.returncode != 0:
+                    print(f"Error running errant_compare for {model_name}:")
+                    print(f"Stderr: {compare_result.stderr}")
+                    results[model_name] = {"P": "Error", "R": "Error", "F0.5": "errant_compare failed", "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": "N/A"}
+                    # No 'continue' here, need to go to finally block
+                else:
+                    # 6. Parse scores
+                    eval_time = time.time() - eval_start_time
+                    print(f"Evaluation took: {eval_time:.2f} seconds")
+                    # print(f"errant_compare output for {model_name}:\n{compare_result.stdout}") # Uncomment for debugging
 
-        match = score_pattern.search(compare_result.stdout)
-        if match:
-            p, r, f05 = match.groups()
-            print(f"Scores for {model_name} (on {len(original_sentences_bea)} samples): P={p}, R={r}, F0.5={f05}")
-            results[model_name] = {
-                "P": float(p),
-                "R": float(r),
-                "F0.5": float(f05),
-                "Samples": len(original_sentences_bea),
-                "Generation Time (s)": f"{generation_time:.2f}",
-                "Eval Time (s)": f"{eval_time:.2f}"
-            }
-        else:
-            print(f"Could not parse scores from errant_compare output for {model_name}.")
-            print(f"Output:\n{compare_result.stdout}")
-            results[model_name] = {"P": "Error", "R": "Error", "F0.5": "Parsing failed", "Samples": len(original_sentences_bea), "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": f"{eval_time:.2f}"}
+                    match = score_pattern.search(compare_result.stdout)
+                    if match:
+                        p, r, f05 = match.groups()
+                        print(f"Scores for {model_name} (on {len(original_sentences_bea)} samples): P={p}, R={r}, F0.5={f05}")
+                        results[model_name] = {
+                            "P": float(p),
+                            "R": float(r),
+                            "F0.5": float(f05),
+                            "Samples": len(original_sentences_bea),
+                            "Generation Time (s)": f"{generation_time:.2f}",
+                            "Eval Time (s)": f"{eval_time:.2f}"
+                        }
+                    else:
+                        print(f"Could not parse scores from errant_compare output for {model_name}.")
+                        print(f"Output:\n{compare_result.stdout}")
+                        results[model_name] = {"P": "Error", "R": "Error", "F0.5": "Parsing failed", "Samples": len(original_sentences_bea), "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": f"{eval_time:.2f}"}
 
     except Exception as e:
-        print(f"An unexpected error occurred during evaluation for {model_name}: {e}")
-        # Attempt to calculate eval time even if error occurred mid-evaluation
-        current_eval_time = time.time() - (eval_start_time if 'eval_start_time' in locals() and eval_start_time else start_time)
-        results[model_name] = {"P": "Error", "R": "Error", "F0.5": f"Exception: {type(e).__name__}", "Samples": len(original_sentences_bea), "Generation Time (s)": f"{generation_time:.2f}", "Eval Time (s)": f"{current_eval_time:.2f}"}
+        print(f"An unexpected error occurred during loading or evaluation for {model_key}: {e}")
+        # Use model_key if llm object wasn't successfully created
+        current_model_name = llm.model_name if llm else model_key
+        gen_time_str = f"{generation_time:.2f}" if 'generation_time' in locals() else "N/A"
+        eval_time_str = f"{eval_time:.2f}" if 'eval_time' in locals() else "N/A"
+
+        if 'eval_start_time' in locals():
+             current_eval_time = time.time() - eval_start_time
+             eval_time_str = f"{current_eval_time:.2f}"
+        elif 'start_time' in locals():
+             current_gen_time = time.time() - start_time
+             gen_time_str = f"{current_gen_time:.2f}"
+
+
+        results[current_model_name] = {
+             "P": "Error", "R": "Error", "F0.5": f"Exception: {type(e).__name__}",
+             "Samples": len(original_sentences_bea) if 'original_sentences_bea' in locals() else 'N/A',
+             "Generation Time (s)": gen_time_str,
+             "Eval Time (s)": eval_time_str
+         }
     finally:
         # 7. Clean up temporary files created in THIS iteration
         for path in [temp_orig_bea_path, temp_cor_bea_path, temp_hyp_m2_path]:
@@ -397,7 +436,23 @@ for model_key in models_to_benchmark_names:
                 try:
                     os.remove(path)
                 except OSError as e:
-                    print(f"  Error removing {path}: {e}")
+                    print(f"  Error removing temp file {path}: {e}")
+
+        # 8. Explicitly delete the LLM object to free VRAM
+        if llm is not None:
+            print(f"Unloading model: {llm.model_name}")
+            del llm
+            # Optional: Force garbage collection if memory issues persist
+            # import gc
+            # gc.collect()
+            # If llama-cpp-python uses torch backend implicitly:
+            # try:
+            #     import torch
+            #     torch.cuda.empty_cache()
+            # except ImportError:
+            #     pass # Ignore if torch isn't installed
+        print("-" * 30) # Separator between models
+
 
 # --- Final Cleanup for Subset Reference M2 ---
 if temp_ref_m2_subset_path and os.path.exists(temp_ref_m2_subset_path):
