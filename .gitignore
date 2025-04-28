@@ -21,6 +21,7 @@
 go.work
 go.work.sum
 
+testing.go
 
 # env file
 .env
@@ -41,3 +42,4 @@ training/**/.coverage.*
 training/**/.cache
 training/**/.mypy_cache/
 training/**/.pytest_cache/
+training/**/data/

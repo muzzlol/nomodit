@@ -17,7 +17,11 @@ model, tokenizer = FastModel.from_pretrained(
 print(model.is_loaded_in_4bit)
 print(model.is_quantized)
 print(model.quantization_method)
-
+'''
+True
+True
+True
+'''
 
 model = FastModel.get_peft_model(
     model,
