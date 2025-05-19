@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,11 +53,62 @@ func main() {
 
 }
 
+type Focusable interface {
+	Focus() tea.Cmd
+	Blur()
+	Update(msg tea.Msg) (tea.Model, tea.Cmd)
+	View() string
+}
+
+type fTextinput struct {
+	Model *textinput.Model
+}
+
+func (ft *fTextinput) Focus() tea.Cmd { return ft.Model.Focus() }
+func (ft *fTextinput) Blur()          { ft.Model.Blur() }
+func (ft *fTextinput) View() string   { return ft.Model.View() }
+func (ft *fTextinput) Init() tea.Cmd  { return nil }
+func (ft *fTextinput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updatedModel, cmd := ft.Model.Update(msg)
+	ft.Model = &updatedModel
+	return ft, cmd
+}
+
+type fTextarea struct {
+	Model *textarea.Model
+}
+
+func (fta *fTextarea) Focus() tea.Cmd { return fta.Model.Focus() }
+func (fta *fTextarea) Blur()          { fta.Model.Blur() }
+func (fta *fTextarea) View() string   { return fta.Model.View() }
+func (fta *fTextarea) Init() tea.Cmd  { return nil }
+func (fta *fTextarea) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	updatedModel, cmd := fta.Model.Update(msg)
+	fta.Model = &updatedModel
+	return fta, cmd
+}
+
+func newFtextinput() *fTextinput {
+	ti := textinput.New()
+	ti.Width = 100
+	ti.Cursor.Style = cursorStyle
+	ti.CharLimit = 200
+
+	return &fTextinput{Model: &ti}
+}
+
+func newFtextarea() *fTextarea {
+	ta := textarea.New()
+	ta.Cursor.Style = cursorStyle
+	ta.ShowLineNumbers = false
+	return &fTextarea{Model: &ta}
+}
+
 type model struct {
 	title        string
 	currentState state
 	focusIndex   int
-	inputs       []textinput.Model
+	focusables   []Focusable
 	help         help.Model
 	keys         keyMap
 }
@@ -98,54 +150,34 @@ type state struct {
 }
 
 func initialModel() model {
-	inputs := make([]textinput.Model, 3) // 0: view, 1: instructions, 2: input
+	// Create wrapper instances
+	output := newFtextarea()
+	output.Model.CharLimit = 500
+	output.Model.SetWidth(100)
+	output.Model.SetHeight(20)
 
-	for i := range inputs {
-		switch i {
-		case 0:
-			// view
-		case 1:
-			instructions := textinput.New()
-			instructions.Placeholder = "Enter your instructions here (default: fix grammatical errors)"
-			instructions.CharLimit = 200
-			instructions.Width = 150
-			// instructions.SetSuggestions([]string{"fix grammatical errors", "fix spelling errors", "fix punctuation errors"})
-			// instructions.ShowSuggestions = true
-			instructions.Cursor.Style = cursorStyle
-			inputs[1] = instructions
-		case 2:
-			input := textinput.New()
-			input.Placeholder = "Enter your input here"
-			input.CharLimit = 200
-			input.Width = 40
-			input.Cursor.Style = cursorStyle
-			inputs[2] = input
-		}
-	}
+	instructions := newFtextinput()
+	instructions.Model.Placeholder = "Enter your instructions here (default: fix grammatical errors)"
+	instructions.Model.Prompt = "Instructions: "
+	instructions.Model.Focus()
 
-	return model{
+	input := newFtextarea()
+	input.Model.CharLimit = 500
+	input.Model.SetWidth(100)
+	input.Model.SetHeight(5)
+
+	m := model{
 		title: accentStyle.Render(title),
 		currentState: state{
 			text:    textStyle(""),
 			spinner: spinner.Pulse,
 		},
-		focusIndex: 1, // instructions part
-		inputs:     inputs,
+		focusIndex: 1,                                        // instructions part
+		focusables: []Focusable{output, instructions, input}, // Use the wrappers
 		keys:       keys,
 		help:       help.New(),
 	}
-}
-
-func (m *model) updateInputs(msg tea.Msg) tea.Cmd {
-	cmds := make([]tea.Cmd, len(m.inputs))
-
-	// Only text inputs with Focus() set will respond, so it's safe to simply
-	// update all of them here without any further logic.
-	for i := range m.inputs {
-		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
-	}
-
-	return tea.Batch(cmds...)
+	return m
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -157,7 +189,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Submit):
 			if m.focusIndex == 0 {
 				// copy funcitonality
-			} else if m.focusIndex == len(m.inputs) {
+			} else if m.focusIndex == len(m.focusables) {
 				// submit functionality
 			}
 		case key.Matches(msg, m.keys.Navigation):
@@ -167,30 +199,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusIndex--
 			}
 			if m.focusIndex < -1 {
-				m.focusIndex = len(m.inputs)
-			} else if m.focusIndex > len(m.inputs) {
+				m.focusIndex = len(m.focusables)
+			} else if m.focusIndex > len(m.focusables) {
 				m.focusIndex = -1
 			}
-			cmds := make([]tea.Cmd, len(m.inputs))
-			for i := 0; i <= len(m.inputs)-1; i++ {
+			cmds := make([]tea.Cmd, len(m.focusables))
+			for i := 0; i <= len(m.focusables)-1; i++ {
 				if i == m.focusIndex {
 					// Set focused state
-					cmds[i] = m.inputs[i].Focus()
-					m.inputs[i].PromptStyle = focusedStyle
-					m.inputs[i].TextStyle = focusedStyle
+					cmds[i] = m.focusables[i].Focus()
 					continue
 				}
 				// Remove focused state
-				m.inputs[i].Blur()
-				m.inputs[i].PromptStyle = noStyle
-				m.inputs[i].TextStyle = noStyle
+				m.focusables[i].Blur()
 			}
 			return m, tea.Batch(cmds...)
 		}
 	}
 	// Handle character input and blinking
-	cmd := m.updateInputs(msg)
+	cmd := m.updateFocusables(msg)
 	return m, cmd
+}
+
+func (m model) updateFocusables(msg tea.Msg) tea.Cmd {
+	// only updates currently focused
+	for _, focusable := range m.focusables {
+		focusable.Update(msg)
+	}
+	return nil
 }
 
 func (m model) View() string {
@@ -206,14 +242,14 @@ func (m model) View() string {
 	} else {
 		s.WriteString(copyBlurredButton)
 	}
-	s.WriteString(m.inputs[0].View()) // view
+	s.WriteString(m.focusables[0].View()) // view
 	// reasoning traces view
 	s.WriteString(gap)
-	s.WriteString(m.inputs[1].View()) // instructions
+	s.WriteString(m.focusables[1].View()) // instructions
 	s.WriteString("\n")
-	s.WriteString(m.inputs[2].View()) // input
+	s.WriteString(m.focusables[2].View()) // input
 	// submit button
-	if m.focusIndex == len(m.inputs) {
+	if m.focusIndex == len(m.focusables) {
 		s.WriteString(submitFocusedButton)
 	} else {
 		s.WriteString(submitBlurredButton)
@@ -225,5 +261,5 @@ func (m model) View() string {
 }
 
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return m.focusables[1].Focus()
 }
