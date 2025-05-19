@@ -223,10 +223,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) updateFocusables(msg tea.Msg) tea.Cmd {
 	// only updates currently focused
-	for _, focusable := range m.focusables {
-		focusable.Update(msg)
+	cmds := make([]tea.Cmd, len(m.focusables))
+	for i := range m.focusables {
+		_, cmds[i] = m.focusables[i].Update(msg) // ignoring tea.Model cause wrappers update internally
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 func (m model) View() string {
