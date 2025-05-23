@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muzzlol/nomodit/pkg/locator"
 )
 
 const (
@@ -20,6 +21,8 @@ const (
   /|/_ _ _ _ _/._/_
  / /_/ / /_/_// /
 	`
+	llamaCLI = "llama-cli"
+	llm      = "unsloth/gemma-3-1b-it-GGUF"
 )
 
 var (
@@ -34,6 +37,7 @@ var (
 	blurredInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Gray
 	cursorStyle       = focusedInputStyle
 	accentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))  // Green
+	dangerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("124")) // Red
 	textStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("252")) // Light Gray
 
 	submitFocusedButton = focusedButtonStyle.Render("[ Submit ]")
@@ -122,12 +126,14 @@ func newFtextarea() *fTextarea {
 }
 
 type model struct {
-	title        string
-	currentState state
-	focusIndex   int
-	focusables   []Focusable
-	help         help.Model
-	keys         keyMap
+	title           string
+	currentState    state
+	focusIndex      int
+	focusables      []Focusable
+	help            help.Model
+	keys            keyMap
+	suggestionsHelp help.Model
+	suggestionKeys  keyMap
 }
 
 type keyMap struct {
@@ -161,6 +167,17 @@ var keys = keyMap{
 	),
 }
 
+var suggestionKeys = keyMap{
+	Navigation: key.NewBinding(
+		key.WithKeys("up", "down"),
+		key.WithHelp("Suggestions: ↑/↓", "navigate"),
+	),
+	Submit: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "accept"),
+	),
+}
+
 type state struct {
 	text    string
 	spinner spinner.Spinner
@@ -174,8 +191,8 @@ func initialModel() model {
 	output.Model.SetHeight(20)
 
 	instructions := newFtextinput()
-	instructions.Model.SetValue("Fix grammar and improve clarity of this text")
-	instructions.Model.SetSuggestions([]string{"Fix grammar", "Fix grammar in this sentence", "Fix grammar in the sentence", "Fix grammar errors", "Fix grammatical errors", "Fix grammaticality", "Fix all grammatical errors", "Fix grammatical errors in this sentence", "Fix grammar errors in this sentence", "Fix grammatical mistakes in this sentence", "Fix grammaticality in this sentence", "Fix grammaticality of the sentence", "Fix disfluencies in the sentence", "Make the sentence grammatical", "Make the sentence fluent", "Fix errors in this text", "Update to remove grammar errors", "Remove all grammatical errors from this text", "Improve the grammar of this text", "Improve the grammaticality", "Improve the grammaticality of this text", "Improve the grammaticality of this sentence", "Grammar improvements", "Remove grammar mistakes", "Remove grammatical mistakes", "Fix the grammar mistakes", "Fix grammatical mistakes", "Clarify the sentence", "Clarify this sentence", "Clarify this text", "Write a clearer version for the sentence", "Write a clarified version of the sentence", "Write a readable version of the sentence", "Write a better readable version of the sentence", "Rewrite the sentence more clearly", "Rewrite this sentence clearly", "Rewrite this sentence for clarity", "Rewrite this sentence for readability", "Improve this sentence for readability", "Make this sentence better readable", "Make this sentence more readable", "Make this sentence readable", "Make the sentence clear", "Make the sentence clearer", "Clarify", "Make the text more understandable", "Make this easier to read", "Clarification", "Change to clearer wording", "Clarify this paragraph", "Use clearer wording", "Simplify the sentence", "Simplify this sentence", "Simplify this text", "Write a simpler version for the sentence", "Rewrite the sentence to be simpler", "Rewrite this sentence in a simpler manner", "Rewrite this sentence for simplicity", "Rewrite this with simpler wording", "Make the sentence simple", "Make the sentence simpler", "Make this text less complex", "Make this simpler", "Simplify", "Simplification", "Change to simpler wording", "Simplify this paragraph", "Simplify this text", "Use simpler wording", "Make this easier to understand", "Fix coherence", "Fix coherence in this sentence", "Fix coherence in the sentence", "Fix coherence in this text", "Fix coherence in the text", "Fix coherence errors", "Fix sentence flow", "Fix sentence transition", "Fix coherence errors in this sentence", "Fix coherence mistakes in this sentence", "Fix coherence in this sentence", "Fix coherence of the sentence", "Fix lack of coherence in the sentence", "Make the text more coherent", "Make the text coherent", "Make the text more cohesive", "Make the text more cohesive, logically linked and consistent as a whole", "Make the text more logical", "Make the text more consistent", "Improve the cohesiveness of the text", "Improve the consistency of the text", "Make the text clearer", "Improve the coherence of the text", "Formalize", "Improve formality", "Formalize the sentence", "Formalize this sentence", "Formalize the text", "Formalize this text", "Make this formal", "Make this more formal", "Make this sound more formal", "Make the sentence formal", "Make the sentence more formal", "Make the sentence sound more formal", "Write more formally", "Write less informally", "Rewrite more formally", "Write this more formally", "Rewrite this more formally", "Write in a formal manner", "Write in a more formal manner", "Rewrite in a more formal manner", "Remove POV", "Remove POVs", "Remove POV in this text", "Remove POVs in this text", "Neutralize this text", "Neutralize the text", "Neutralize this sentence", "Neutralize the sentence", "Make this more neutral", "Make this text more neutral", "Make this sentence more neutral", "Make this paragraph more neutral", "Remove unsourced opinions", "Remove unsourced opinions from this text", "Remove non-neutral POVs", "Remove non-neutral POV", "Remove non-neutral points of view", "Remove points of view", "Make this text less biased", "Paraphrase the sentence", "Paraphrase this sentence", "Paraphrase this text", "Paraphrase", "Write a paraphrase for the sentence", "Write a paraphrased version of the sentence", "Rewrite the sentence with different wording", "Use different wording", "Rewrite this sentence", "Reword this sentence", "Rephrase this sentence", "Rewrite this text", "Reword this text", "Rephrase this text"})
+	instructions.Model.SetValue("Fix grammar")
+	instructions.Model.SetSuggestions([]string{"Fix grammar and improve clarity of this text", "Fix grammar", "Fix grammar in this sentence", "Fix grammar in the sentence", "Fix grammar errors", "Fix grammatical errors", "Fix grammaticality", "Fix all grammatical errors", "Fix grammatical errors in this sentence", "Fix grammar errors in this sentence", "Fix grammatical mistakes in this sentence", "Fix grammaticality in this sentence", "Fix grammaticality of the sentence", "Fix disfluencies in the sentence", "Make the sentence grammatical", "Make the sentence fluent", "Fix errors in this text", "Update to remove grammar errors", "Remove all grammatical errors from this text", "Improve the grammar of this text", "Improve the grammaticality", "Improve the grammaticality of this text", "Improve the grammaticality of this sentence", "Grammar improvements", "Remove grammar mistakes", "Remove grammatical mistakes", "Fix the grammar mistakes", "Fix grammatical mistakes", "Clarify the sentence", "Clarify this sentence", "Clarify this text", "Write a clearer version for the sentence", "Write a clarified version of the sentence", "Write a readable version of the sentence", "Write a better readable version of the sentence", "Rewrite the sentence more clearly", "Rewrite this sentence clearly", "Rewrite this sentence for clarity", "Rewrite this sentence for readability", "Improve this sentence for readability", "Make this sentence better readable", "Make this sentence more readable", "Make this sentence readable", "Make the sentence clear", "Make the sentence clearer", "Clarify", "Make the text more understandable", "Make this easier to read", "Clarification", "Change to clearer wording", "Clarify this paragraph", "Use clearer wording", "Simplify the sentence", "Simplify this sentence", "Simplify this text", "Write a simpler version for the sentence", "Rewrite the sentence to be simpler", "Rewrite this sentence in a simpler manner", "Rewrite this sentence for simplicity", "Rewrite this with simpler wording", "Make the sentence simple", "Make the sentence simpler", "Make this text less complex", "Make this simpler", "Simplify", "Simplification", "Change to simpler wording", "Simplify this paragraph", "Simplify this text", "Use simpler wording", "Make this easier to understand", "Fix coherence", "Fix coherence in this sentence", "Fix coherence in the sentence", "Fix coherence in this text", "Fix coherence in the text", "Fix coherence errors", "Fix sentence flow", "Fix sentence transition", "Fix coherence errors in this sentence", "Fix coherence mistakes in this sentence", "Fix coherence in this sentence", "Fix coherence of the sentence", "Fix lack of coherence in the sentence", "Make the text more coherent", "Make the text coherent", "Make the text more cohesive", "Make the text more cohesive, logically linked and consistent as a whole", "Make the text more logical", "Make the text more consistent", "Improve the cohesiveness of the text", "Improve the consistency of the text", "Make the text clearer", "Improve the coherence of the text", "Formalize", "Improve formality", "Formalize the sentence", "Formalize this sentence", "Formalize the text", "Formalize this text", "Make this formal", "Make this more formal", "Make this sound more formal", "Make the sentence formal", "Make the sentence more formal", "Make the sentence sound more formal", "Write more formally", "Write less informally", "Rewrite more formally", "Write this more formally", "Rewrite this more formally", "Write in a formal manner", "Write in a more formal manner", "Rewrite in a more formal manner", "Remove POV", "Remove POVs", "Remove POV in this text", "Remove POVs in this text", "Neutralize this text", "Neutralize the text", "Neutralize this sentence", "Neutralize the sentence", "Make this more neutral", "Make this text more neutral", "Make this sentence more neutral", "Make this paragraph more neutral", "Remove unsourced opinions", "Remove unsourced opinions from this text", "Remove non-neutral POVs", "Remove non-neutral POV", "Remove non-neutral points of view", "Remove points of view", "Make this text less biased", "Paraphrase the sentence", "Paraphrase this sentence", "Paraphrase this text", "Paraphrase", "Write a paraphrase for the sentence", "Write a paraphrased version of the sentence", "Rewrite the sentence with different wording", "Use different wording", "Rewrite this sentence", "Reword this sentence", "Rephrase this sentence", "Rewrite this text", "Reword this text", "Rephrase this text"})
 	instructions.Model.KeyMap.AcceptSuggestion = key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "accept suggestion"),
@@ -196,10 +213,12 @@ func initialModel() model {
 			text:    textStyle.Render("helllllooo"),
 			spinner: spinner.Pulse,
 		},
-		focusIndex: 1,                                        // instructions part
-		focusables: []Focusable{output, instructions, input}, // Use the wrappers
-		keys:       keys,
-		help:       help.New(),
+		focusIndex:      1,                                        // instructions part
+		focusables:      []Focusable{output, instructions, input}, // Use the wrappers
+		keys:            keys,
+		help:            help.New(),
+		suggestionsHelp: help.New(),
+		suggestionKeys:  suggestionKeys,
 	}
 	return m
 }
@@ -286,6 +305,10 @@ func (m model) View() string {
 			BorderForeground(lipgloss.Color("240")) // Gray border when blurred
 	}
 	s.WriteString(borderStyle.Render(m.focusables[1].View())) // instructions
+	if m.focusIndex == 1 {
+		s.WriteString("\n")
+		s.WriteString(m.suggestionsHelp.View(m.suggestionKeys))
+	}
 	s.WriteString("\n")
 	s.WriteString(m.focusables[2].View()) // input area
 	s.WriteString("\n")
@@ -303,5 +326,9 @@ func (m model) View() string {
 }
 
 func (m model) Init() tea.Cmd {
+	_, err := locator.CheckLlama()
+	if err != nil {
+		m.currentState.text = dangerStyle.Render("llama-cli not found")
+	}
 	return m.focusables[1].Focus()
 }

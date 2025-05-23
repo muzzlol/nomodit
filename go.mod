@@ -1,4 +1,4 @@
-module nomodit
+module github.com/muzzlol/nomodit
 
 go 1.23.2
 
