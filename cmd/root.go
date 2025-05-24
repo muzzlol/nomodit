@@ -6,6 +6,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/muzzlol/nomodit/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -14,9 +15,9 @@ var rootCmd = &cobra.Command{
 	Use:   "nomodit",
 	Short: "",
 	Long:  ``,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { }
+	Run: func(cmd *cobra.Command, args []string) {
+		tui.Launch()
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

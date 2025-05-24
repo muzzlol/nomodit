@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"log"
@@ -21,8 +21,6 @@ const (
   /|/_ _ _ _ _/._/_
  / /_/ / /_/_// /
 	`
-	llamaCLI = "llama-cli"
-	llm      = "unsloth/gemma-3-1b-it-GGUF"
 )
 
 var (
@@ -46,8 +44,8 @@ var (
 	copyBlurredButton   = blurredButtonStyle.Render("[ Copy ]")
 )
 
-func main() {
-	p := tea.NewProgram(initialModel())
+func Launch() {
+	p := tea.NewProgram(InitialModel())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -183,7 +181,7 @@ type state struct {
 	spinner spinner.Spinner
 }
 
-func initialModel() model {
+func InitialModel() model {
 	// Create wrapper instances
 	output := newFtextarea()
 	output.Model.CharLimit = 500
