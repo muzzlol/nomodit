@@ -35,7 +35,7 @@ var rootCmd = &cobra.Command{
 		}
 		return nil
 	},
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PreRun: func(cmd *cobra.Command, args []string) {
 		if err := config.Load(); err != nil {
 			fmt.Printf("failed to load config: %v, \nusing default values: %v\n", err, cfg)
 		}
@@ -70,9 +70,9 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&cfg.LLM, "llm", "l", "unsloth/gemma-3-1b-it-GGUF", "LLM model to use")
-	rootCmd.PersistentFlags().StringVarP(&cfg.Instruction, "instruction", "i", "Fix grammar and improve clarity of this text", "Instructions to use for the LLM")
+	rootCmd.Flags().StringVarP(&cfg.LLM, "llm", "l", "unsloth/gemma-3-1b-it-GGUF", "LLM model to use")
+	rootCmd.Flags().StringVarP(&cfg.Instruction, "instruction", "i", "Fix grammar and improve clarity of this text", "Instructions to use for the LLM")
 
-	viper.BindPFlag("llm", rootCmd.PersistentFlags().Lookup("llm"))
+	viper.BindPFlag("llm", rootCmd.Flags().Lookup("llm"))
 
 }
