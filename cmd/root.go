@@ -4,19 +4,59 @@ Copyright © 2024 Muzz Khan muzxmmilkhxn@gmail.com
 package cmd
 
 import (
+	"fmt"
 	"os"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muzzlol/nomodit/internal/tui"
+	"github.com/muzzlol/nomodit/pkg/config"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+type Config struct {
+	LLM         string
+	Instruction string
+}
+
+var (
+	cfg         Config
+	dangerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nomodit",
-	Short: "",
+	Short: "Nomodit is a cli/tui to inference LLMs for language tasks",
 	Long:  ``,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			return fmt.Errorf("please wrap your text in quotes")
+		}
+		return nil
+	},
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if err := config.Load(); err != nil {
+			fmt.Printf("failed to load config: %v, \nusing default values: %v\n", err, cfg)
+		}
+		if cmd.Flags().Changed("llm") {
+			viper.Set("llm", cfg.LLM)
+			if err := config.Save(); err != nil {
+				fmt.Printf("failed to save config: %v\n", err)
+			}
+		}
+	},
 	Run: func(cmd *cobra.Command, args []string) {
-		tui.Launch()
+		if len(args) == 0 {
+			tui.Launch()
+		} else {
+			if args[0] == "" {
+				cmd.PrintErrln(dangerStyle.Render("Please provide some text to edit."))
+				return
+			}
+			text := args[0]
+			fmt.Println("text", text)
+		}
 	},
 }
 
@@ -30,13 +70,9 @@ func Execute() {
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
+	rootCmd.PersistentFlags().StringVarP(&cfg.LLM, "llm", "l", "unsloth/gemma-3-1b-it-GGUF", "LLM model to use")
+	rootCmd.PersistentFlags().StringVarP(&cfg.Instruction, "instruction", "i", "Fix grammar and improve clarity of this text", "Instructions to use for the LLM")
 
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nomodit.yaml)")
+	viper.BindPFlag("llm", rootCmd.PersistentFlags().Lookup("llm"))
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
