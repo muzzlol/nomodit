@@ -27,8 +27,7 @@ func TestLlamaServer(t *testing.T) {
 
 	inferenceReq1 := InferenceReq{
 		Prompt: "Hello, how are you?",
-		Temp:   0.7,
-		Stream: true,
+		Temp:   0.3,
 	}
 
 	inferenceRespChan, err := server.Inference(inferenceReq1)
@@ -37,8 +36,21 @@ func TestLlamaServer(t *testing.T) {
 	}
 
 	for resp := range inferenceRespChan {
-		fmt.Println("Inference response:", resp.Content)
+		fmt.Println("response 1:", resp.Content)
 	}
 
+	inferenceReq2 := InferenceReq{
+		Prompt: "What did i ask you before this?",
+		Temp:   0.7,
+	}
+
+	inferenceRespChan, err = server.Inference(inferenceReq2)
+	if err != nil {
+		t.Fatalf("Failed to get inference response: %v", err)
+	}
+
+	for resp := range inferenceRespChan {
+		fmt.Println("\n\nresponse 2:", resp.Content)
+	}
 	fmt.Println("Inference completed")
 }

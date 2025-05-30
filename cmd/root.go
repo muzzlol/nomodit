@@ -56,11 +56,11 @@ It allows you to use the nomodit series of models ( more about it here: https://
 			}
 			defer server.Stop()
 
-			inferenceReq1 := llama.InferenceReq{
+			inferenceReq := llama.InferenceReq{
 				Prompt: prompt,
 				Temp:   0.3,
 			}
-			respStream, err := server.Inference(inferenceReq1)
+			respStream, err := server.Inference(inferenceReq)
 			if err != nil {
 				cmd.PrintErrln(dangerStyle.Render(err.Error()))
 				return
@@ -69,20 +69,7 @@ It allows you to use the nomodit series of models ( more about it here: https://
 			for resp := range respStream {
 				fmt.Print(resp.Content)
 			}
-
-			inferenceReq2 := llama.InferenceReq{Prompt: "What did i ask you before this?"}
-			respStream, err = server.Inference(inferenceReq2)
-			if err != nil {
-				cmd.PrintErrln(dangerStyle.Render(err.Error()))
-				return
-			}
-			fmt.Println("\nSecond response:")
-			for resp := range respStream {
-				fmt.Print(resp.Content)
-			}
-
 			fmt.Println("\n\n*Inference completed*")
-
 		}
 	},
 }
