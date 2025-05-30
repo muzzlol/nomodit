@@ -20,10 +20,11 @@ type LlamaServer struct {
 }
 
 type InferenceReq struct {
-	Prompt   string  `json:"prompt"`
-	Temp     float32 `json:"temp,omitempty"`
-	Stream   bool    `json:"stream,omitempty"`
-	NPredict int     `json:"n_predict,omitempty"`
+	Prompt      string  `json:"prompt"`
+	Temp        float32 `json:"temp,omitempty"`
+	Stream      bool    `json:"stream,omitempty"`
+	NPredict    int     `json:"n_predict,omitempty"`
+	CachePrompt bool    `json:"cache_prompt"`
 }
 
 type InferenceResp struct {
@@ -91,12 +92,20 @@ func (s *LlamaServer) Stop() {
 }
 
 func (s *LlamaServer) Inference(req InferenceReq) (<-chan InferenceResp, error) {
+
+	req.Stream = true
+	req.CachePrompt = false
+
 	jsonReq, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := http.Post(
+	client := &http.Client{
+		Timeout: 3 * time.Minute,
+	}
+
+	resp, err := client.Post(
 		s.baseURL+"/completion",
 		"application/json",
 		bytes.NewBuffer(jsonReq),
@@ -109,7 +118,7 @@ func (s *LlamaServer) Inference(req InferenceReq) (<-chan InferenceResp, error) 
 		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
-	respChan := make(chan InferenceResp, 10)
+	respChan := make(chan InferenceResp, 100)
 
 	go func() {
 		defer resp.Body.Close()

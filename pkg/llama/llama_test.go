@@ -2,7 +2,6 @@ package llama
 
 import (
 	"fmt"
-	"log"
 	"testing"
 	"time"
 )
@@ -11,7 +10,7 @@ func TestLlamaServer(t *testing.T) {
 	fmt.Println("Starting llama server")
 	server, err := StartLlamaServer("unsloth/gemma-3-1b-it-GGUF", "8091")
 	if err != nil {
-		log.Fatalf("Failed to start llama server: %v", err)
+		t.Fatalf("Failed to start llama server: %v", err)
 	}
 	defer server.Stop()
 
@@ -26,13 +25,13 @@ func TestLlamaServer(t *testing.T) {
 		}
 	}
 
-	inferenceReq := InferenceReq{
+	inferenceReq1 := InferenceReq{
 		Prompt: "Hello, how are you?",
 		Temp:   0.7,
 		Stream: true,
 	}
 
-	inferenceRespChan, err := server.Inference(inferenceReq)
+	inferenceRespChan, err := server.Inference(inferenceReq1)
 	if err != nil {
 		t.Fatalf("Failed to get inference response: %v", err)
 	}
