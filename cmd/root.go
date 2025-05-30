@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muzzlol/nomodit/internal/tui"
 	"github.com/muzzlol/nomodit/pkg/config"
+	"github.com/muzzlol/nomodit/pkg/llama"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -47,8 +48,31 @@ It allows you to use the nomodit series of models ( more about it here: https://
 				cmd.PrintErrln(dangerStyle.Render("Please provide some text to edit."))
 				return
 			}
-			text := args[0]
-			fmt.Println("text:", text)
+			prompt := args[0]
+			server, err := llama.StartLlamaServer(LLM, "8091")
+			if err != nil {
+				cmd.PrintErrln(dangerStyle.Render(err.Error()))
+				return
+			}
+			defer server.Stop()
+
+			inferenceReq := llama.InferenceReq{
+				Prompt: prompt,
+				Temp:   0.3,
+				Stream: true,
+			}
+			respStream, err := server.Inference(inferenceReq)
+			if err != nil {
+				cmd.PrintErrln(dangerStyle.Render(err.Error()))
+				return
+			}
+
+			for resp := range respStream {
+				fmt.Print(resp.Content)
+			}
+
+			fmt.Println("\n\n*Inference completed*")
+
 		}
 	},
 }
