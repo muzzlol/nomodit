@@ -14,33 +14,26 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Config struct {
+var (
 	LLM         string
 	Instruction string
-}
-
-var (
-	cfg         Config
 	dangerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "nomodit",
-	Short: "Nomodit is a cli/tui to inference LLMs for language tasks",
-	Long:  ``,
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) > 1 {
-			return fmt.Errorf("please wrap your text in quotes")
-		}
-		return nil
-	},
+	Use:   "cli := nomodit [flags] [\"text\"] \ntui := nomodit [flags]",
+	Short: "Nomodit is a CLI/TUI for inferencing LLMs for language tasks",
+	Long: `Nomodit is a CLI/TUI for inferencing LLMs for language tasks.
+It allows you to use the nomodit series of models ( more about it here: https://github.com/muzzlol/nomodit ) and also any other model that supports the GGUF format.
+	`,
+	Args: cobra.MinimumNArgs(1),
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if err := config.Load(); err != nil {
-			fmt.Printf("failed to load config: %v, \nusing default values: %v\n", err, cfg)
+			fmt.Printf("failed to load config: %v, \nusing default values: llm: %v, instruction: %v\n", err, LLM, Instruction)
 		}
 		if cmd.Flags().Changed("llm") {
-			viper.Set("llm", cfg.LLM)
+			viper.Set("llm", LLM)
 			if err := config.Save(); err != nil {
 				fmt.Printf("failed to save config: %v\n", err)
 			}
@@ -55,7 +48,7 @@ var rootCmd = &cobra.Command{
 				return
 			}
 			text := args[0]
-			fmt.Println("text", text)
+			fmt.Println("text:", text)
 		}
 	},
 }
@@ -70,8 +63,8 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&cfg.LLM, "llm", "l", "unsloth/gemma-3-1b-it-GGUF", "LLM model to use")
-	rootCmd.Flags().StringVarP(&cfg.Instruction, "instruction", "i", "Fix grammar and improve clarity of this text", "Instructions to use for the LLM")
+	rootCmd.Flags().StringVarP(&LLM, "llm", "m", "unsloth/gemma-3-1b-it-GGUF", "LLM to be used")
+	rootCmd.Flags().StringVarP(&Instruction, "instruction", "i", "Fix grammar and improve clarity of this text", "Instructions to use for the LLM")
 
 	viper.BindPFlag("llm", rootCmd.Flags().Lookup("llm"))
 

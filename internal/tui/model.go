@@ -9,10 +9,10 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/spf13/viper"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muzzlol/nomodit/pkg/locator"
 )
 
 const (
@@ -116,7 +116,7 @@ func newFtextarea() *fTextarea {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")) // Gray border
 
-	ta.FocusedStyle.Base = style.BorderForeground(lipgloss.Color("34"))
+	ta.FocusedStyle.Base = style.BorderForeground(lipgloss.Color("34")) // Green border
 	ta.BlurredStyle.Base = style
 	ta.Blur()
 
@@ -124,6 +124,7 @@ func newFtextarea() *fTextarea {
 }
 
 type model struct {
+	llm             string
 	title           string
 	currentState    state
 	focusIndex      int
@@ -206,6 +207,7 @@ func InitialModel() model {
 	input.Model.SetHeight(5)
 
 	m := model{
+		llm:   viper.GetString("llm"),
 		title: accentStyle.Render(title),
 		currentState: state{
 			text:    textStyle.Render("helllllooo"),
@@ -324,9 +326,5 @@ func (m model) View() string {
 }
 
 func (m model) Init() tea.Cmd {
-	_, err := locator.CheckLlama()
-	if err != nil {
-		m.currentState.text = dangerStyle.Render("llama-cli not found")
-	}
 	return m.focusables[1].Focus()
 }

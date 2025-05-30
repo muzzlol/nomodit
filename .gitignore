@@ -30,16 +30,16 @@ testing.go
 nomodit_desc.text
 
 ## Python ignores 
-training/**/*.pyc
-training/**/__pycache__/
-training/**/*.pyo
-training/**/*.pyd
-training/**/.Python
-training/**/env/
-training/**/venv/
-training/**/.coverage
-training/**/.coverage.*
-training/**/.cache
-training/**/.mypy_cache/
-training/**/.pytest_cache/
-training/**/data/
+nomodit-training/**/*.pyc
+nomodit-training/**/__pycache__/
+nomodit-training/**/*.pyo
+nomodit-training/**/*.pyd
+nomodit-training/**/.Python
+nomodit-training/**/env/
+nomodit-training/**/venv/
+nomodit-training/**/.coverage
+nomodit-training/**/.coverage.*
+nomodit-training/**/.cache
+nomodit-training/**/.mypy_cache/
+nomodit-training/**/.pytest_cache/
+nomodit-training/**/data/
