@@ -1,5 +1,3 @@
-# nomodit
-
 # Nomodit - Natural Language Text Modifier
 
 Nomodit is a command-line tool for text editing and modification using a fine-tuned version of Google's Gemma model. The tool specializes in various language-related tasks including:
