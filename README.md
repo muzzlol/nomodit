@@ -26,5 +26,8 @@ nomodit -i "Fix grammatical errors" "I has went to the store yesterday."
 ### Interactive TUI
 Running `nomodit` without arguments launches an interactive text user interface with separate input areas for instructions and text.
 
+![image](https://github.com/user-attachments/assets/af28d15b-41ee-4d64-85ce-20fa078e2a40)
+
+
 ## Technical Details
 Built on a fine-tuned version of Google's Gemma 3 model using the CoEdit dataset, which contains paired examples of original and improved text across multiple english language editing tasks. 
