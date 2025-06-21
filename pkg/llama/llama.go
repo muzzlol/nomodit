@@ -12,11 +12,15 @@ import (
 	"time"
 )
 
+type ServerStatus struct {
+	Message string
+	IsError bool
+}
+
 type LlamaServer struct {
 	llamaCmd *exec.Cmd
 	port     string
 	baseURL  string
-	status   string
 }
 
 type InferenceReq struct {
@@ -44,42 +48,78 @@ func StartLlamaServer(llm string, port string) (*LlamaServer, error) {
 		llamaCmd: cmd,
 		port:     port,
 		baseURL:  fmt.Sprintf("http://localhost:%s", port),
-		status:   "starting server",
 	}
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start llama-server: %w", err)
 	}
 
-	if err := server.waitForServer(30 * time.Second); err != nil {
-		server.Stop()
-		return nil, fmt.Errorf("failed to start within timeout: %w", err)
-	}
-
 	return server, nil
 }
 
-func (s *LlamaServer) waitForServer(timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+func (s *LlamaServer) StatusUpdates(ctx context.Context) <-chan ServerStatus {
+	statusChan := make(chan ServerStatus, 10)
 
-	ticker := time.NewTicker(200 * time.Millisecond)
+	go func() {
+		defer close(statusChan)
+
+		statusChan <- ServerStatus{Message: "Starting llama-server"}
+
+		go s.monitorErrors(statusChan)
+
+		s.monitorHealth(ctx, statusChan)
+	}()
+	return statusChan
+}
+
+func (s *LlamaServer) monitorErrors(statusChan chan<- ServerStatus) {
+	stderr, err := s.llamaCmd.StderrPipe()
+	if err != nil {
+		statusChan <- ServerStatus{Message: "Failed to monitor server errors", IsError: true}
+		return
+	}
+
+	scanner := bufio.NewScanner(stderr)
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.Contains(line, "error"):
+			statusChan <- ServerStatus{Message: line, IsError: true}
+		case strings.Contains(line, "error: model is private or does not exist;"):
+			statusChan <- ServerStatus{Message: "Model is private ordoes not exist; try using a different model", IsError: true}
+		default:
+			statusChan <- ServerStatus{Message: line, IsError: false}
+		}
+	}
+}
+
+func (s *LlamaServer) monitorHealth(ctx context.Context, statusChan chan<- ServerStatus) {
+	healthURL := s.baseURL + "/health"
+	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
+
+	timeout := time.After(30 * time.Second)
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
+		case <-timeout:
+			statusChan <- ServerStatus{Message: "Server startup timed out", IsError: true}
 		case <-ticker.C:
-			resp, err := http.Get(s.baseURL + "/health")
-			if err == nil {
-				resp.Body.Close()
-				if resp.StatusCode == 503 {
-					s.status = "Loading model"
-				} else if resp.StatusCode == 200 {
-					s.status = "Server is ready"
-					return nil
-				}
+			resp, err := http.Get(healthURL)
+			if err != nil {
+				continue
+			}
+			resp.Body.Close()
+			switch resp.StatusCode {
+			case 200:
+				statusChan <- ServerStatus{Message: "Server is ready", IsError: false}
+				return
+			case 503:
+				statusChan <- ServerStatus{Message: "Loading model...", IsError: false}
+			default:
+				statusChan <- ServerStatus{Message: fmt.Sprintf("Server not ready: %d", resp.StatusCode), IsError: true}
 			}
 		}
 	}
