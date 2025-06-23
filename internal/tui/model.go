@@ -44,8 +44,8 @@ var (
 	copyBlurredButton   = blurredButtonStyle.Render("[ Copy ]")
 )
 
-func Launch() {
-	p := tea.NewProgram(InitialModel())
+func Launch(instruction string) {
+	p := tea.NewProgram(InitialModel(instruction))
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -182,7 +182,7 @@ type state struct {
 	spinner spinner.Spinner
 }
 
-func InitialModel() model {
+func InitialModel(instruction string) model {
 	// Create wrapper instances
 	output := newFtextarea()
 	output.Model.CharLimit = 500
@@ -190,7 +190,7 @@ func InitialModel() model {
 	output.Model.SetHeight(20)
 
 	instructions := newFtextinput()
-	instructions.Model.SetValue("Fix grammar")
+	instructions.Model.SetValue(instruction)
 	instructions.Model.SetSuggestions([]string{"Fix grammar and improve clarity of this text", "Fix grammar", "Fix grammar in this sentence", "Fix grammar in the sentence", "Fix grammar errors", "Fix grammatical errors", "Fix grammaticality", "Fix all grammatical errors", "Fix grammatical errors in this sentence", "Fix grammar errors in this sentence", "Fix grammatical mistakes in this sentence", "Fix grammaticality in this sentence", "Fix grammaticality of the sentence", "Fix disfluencies in the sentence", "Make the sentence grammatical", "Make the sentence fluent", "Fix errors in this text", "Update to remove grammar errors", "Remove all grammatical errors from this text", "Improve the grammar of this text", "Improve the grammaticality", "Improve the grammaticality of this text", "Improve the grammaticality of this sentence", "Grammar improvements", "Remove grammar mistakes", "Remove grammatical mistakes", "Fix the grammar mistakes", "Fix grammatical mistakes", "Clarify the sentence", "Clarify this sentence", "Clarify this text", "Write a clearer version for the sentence", "Write a clarified version of the sentence", "Write a readable version of the sentence", "Write a better readable version of the sentence", "Rewrite the sentence more clearly", "Rewrite this sentence clearly", "Rewrite this sentence for clarity", "Rewrite this sentence for readability", "Improve this sentence for readability", "Make this sentence better readable", "Make this sentence more readable", "Make this sentence readable", "Make the sentence clear", "Make the sentence clearer", "Clarify", "Make the text more understandable", "Make this easier to read", "Clarification", "Change to clearer wording", "Clarify this paragraph", "Use clearer wording", "Simplify the sentence", "Simplify this sentence", "Simplify this text", "Write a simpler version for the sentence", "Rewrite the sentence to be simpler", "Rewrite this sentence in a simpler manner", "Rewrite this sentence for simplicity", "Rewrite this with simpler wording", "Make the sentence simple", "Make the sentence simpler", "Make this text less complex", "Make this simpler", "Simplify", "Simplification", "Change to simpler wording", "Simplify this paragraph", "Simplify this text", "Use simpler wording", "Make this easier to understand", "Fix coherence", "Fix coherence in this sentence", "Fix coherence in the sentence", "Fix coherence in this text", "Fix coherence in the text", "Fix coherence errors", "Fix sentence flow", "Fix sentence transition", "Fix coherence errors in this sentence", "Fix coherence mistakes in this sentence", "Fix coherence in this sentence", "Fix coherence of the sentence", "Fix lack of coherence in the sentence", "Make the text more coherent", "Make the text coherent", "Make the text more cohesive", "Make the text more cohesive, logically linked and consistent as a whole", "Make the text more logical", "Make the text more consistent", "Improve the cohesiveness of the text", "Improve the consistency of the text", "Make the text clearer", "Improve the coherence of the text", "Formalize", "Improve formality", "Formalize the sentence", "Formalize this sentence", "Formalize the text", "Formalize this text", "Make this formal", "Make this more formal", "Make this sound more formal", "Make the sentence formal", "Make the sentence more formal", "Make the sentence sound more formal", "Write more formally", "Write less informally", "Rewrite more formally", "Write this more formally", "Rewrite this more formally", "Write in a formal manner", "Write in a more formal manner", "Rewrite in a more formal manner", "Remove POV", "Remove POVs", "Remove POV in this text", "Remove POVs in this text", "Neutralize this text", "Neutralize the text", "Neutralize this sentence", "Neutralize the sentence", "Make this more neutral", "Make this text more neutral", "Make this sentence more neutral", "Make this paragraph more neutral", "Remove unsourced opinions", "Remove unsourced opinions from this text", "Remove non-neutral POVs", "Remove non-neutral POV", "Remove non-neutral points of view", "Remove points of view", "Make this text less biased", "Paraphrase the sentence", "Paraphrase this sentence", "Paraphrase this text", "Paraphrase", "Write a paraphrase for the sentence", "Write a paraphrased version of the sentence", "Rewrite the sentence with different wording", "Use different wording", "Rewrite this sentence", "Reword this sentence", "Rephrase this sentence", "Rewrite this text", "Reword this text", "Rephrase this text"})
 	instructions.Model.KeyMap.AcceptSuggestion = key.NewBinding(
 		key.WithKeys("enter"),

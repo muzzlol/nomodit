@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,10 +19,11 @@ type ServerStatus struct {
 	IsError bool
 }
 
-type LlamaServer struct {
+type Server struct {
 	llamaCmd *exec.Cmd
 	port     string
 	baseURL  string
+	stderr   io.ReadCloser
 }
 
 type InferenceReq struct {
@@ -36,7 +39,7 @@ type InferenceResp struct {
 	Stop    bool   `json:"stop"`
 }
 
-func StartLlamaServer(llm string, port string) (*LlamaServer, error) {
+func StartServer(llm string, port string) (*Server, error) {
 	llamaCmd, err := exec.LookPath("llama-server")
 	if err != nil {
 		return nil, fmt.Errorf("llama-server not found: %w", err)
@@ -44,10 +47,16 @@ func StartLlamaServer(llm string, port string) (*LlamaServer, error) {
 	args := []string{"-hf", llm, "--port", port}
 	cmd := exec.Command(llamaCmd, args...)
 
-	server := &LlamaServer{
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	server := &Server{
 		llamaCmd: cmd,
 		port:     port,
 		baseURL:  fmt.Sprintf("http://localhost:%s", port),
+		stderr:   stderr,
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -57,29 +66,32 @@ func StartLlamaServer(llm string, port string) (*LlamaServer, error) {
 	return server, nil
 }
 
-func (s *LlamaServer) StatusUpdates(ctx context.Context) <-chan ServerStatus {
+func (s *Server) StatusUpdates(ctx context.Context) <-chan ServerStatus {
 	statusChan := make(chan ServerStatus, 10)
 
 	go func() {
-		defer close(statusChan)
+		var wg sync.WaitGroup
+		defer func() {
+			wg.Wait()
+			close(statusChan)
+		}()
 
 		statusChan <- ServerStatus{Message: "Starting llama-server"}
 
-		go s.monitorErrors(statusChan)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.monitorErrors(statusChan)
+		}()
 
 		s.monitorHealth(ctx, statusChan)
+		s.stderr.Close()
 	}()
 	return statusChan
 }
 
-func (s *LlamaServer) monitorErrors(statusChan chan<- ServerStatus) {
-	stderr, err := s.llamaCmd.StderrPipe()
-	if err != nil {
-		statusChan <- ServerStatus{Message: "Failed to monitor server errors", IsError: true}
-		return
-	}
-
-	scanner := bufio.NewScanner(stderr)
+func (s *Server) monitorErrors(statusChan chan<- ServerStatus) {
+	scanner := bufio.NewScanner(s.stderr)
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch {
@@ -93,7 +105,7 @@ func (s *LlamaServer) monitorErrors(statusChan chan<- ServerStatus) {
 	}
 }
 
-func (s *LlamaServer) monitorHealth(ctx context.Context, statusChan chan<- ServerStatus) {
+func (s *Server) monitorHealth(ctx context.Context, statusChan chan<- ServerStatus) {
 	healthURL := s.baseURL + "/health"
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
@@ -125,13 +137,13 @@ func (s *LlamaServer) monitorHealth(ctx context.Context, statusChan chan<- Serve
 	}
 }
 
-func (s *LlamaServer) Stop() {
+func (s *Server) Stop() {
 	if s.llamaCmd != nil && s.llamaCmd.Process != nil {
 		s.llamaCmd.Process.Kill()
 	}
 }
 
-func (s *LlamaServer) Inference(req InferenceReq) (<-chan InferenceResp, error) {
+func (s *Server) Inference(req InferenceReq) (<-chan InferenceResp, error) {
 
 	req.Stream = true
 	req.CachePrompt = false

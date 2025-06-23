@@ -8,7 +8,7 @@ import (
 
 func TestLlamaServer(t *testing.T) {
 	fmt.Println("Starting llama server")
-	server, err := StartLlamaServer("unsloth/gemma-3-4b-it-GGUF", "8091")
+	server, err := StartServer("unsloth/gemma-3-1b-it-GGUF", "8091")
 	if err != nil {
 		t.Fatalf("Failed to start llama server: %v", err)
 	}
@@ -20,8 +20,8 @@ func TestLlamaServer(t *testing.T) {
 
 	inferenceReq1 := InferenceReq{
 		Prompt:   "what is the capital of france?",
-		Temp:     0.3,
-		NPredict: 30,
+		Temp:     0.1,
+		NPredict: 100,
 	}
 
 	inferenceRespChan, err := server.Inference(inferenceReq1)
@@ -36,8 +36,8 @@ func TestLlamaServer(t *testing.T) {
 
 	inferenceReq2 := InferenceReq{
 		Prompt:   "What did i ask you before this?",
-		Temp:     0.7,
-		NPredict: 30,
+		Temp:     0.1,
+		NPredict: 100,
 	}
 
 	inferenceRespChan, err = server.Inference(inferenceReq2)
