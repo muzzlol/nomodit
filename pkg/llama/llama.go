@@ -95,12 +95,10 @@ func (s *Server) monitorErrors(statusChan chan<- ServerStatus) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch {
-		case strings.Contains(line, "error"):
+		case strings.Contains(line, "error: model is private or does not exist; if you are accessing a gated model, please provide a valid HF token"):
+			statusChan <- ServerStatus{Message: "Model is private or does not exist; try using a different model", IsError: true}
+		case strings.Contains(line, "error:"):
 			statusChan <- ServerStatus{Message: line, IsError: true}
-		case strings.Contains(line, "error: model is private or does not exist;"):
-			statusChan <- ServerStatus{Message: "Model is private ordoes not exist; try using a different model", IsError: true}
-		default:
-			statusChan <- ServerStatus{Message: line, IsError: false}
 		}
 	}
 }
@@ -129,7 +127,7 @@ func (s *Server) monitorHealth(ctx context.Context, statusChan chan<- ServerStat
 				statusChan <- ServerStatus{Message: "Server is ready", IsError: false}
 				return
 			case 503:
-				statusChan <- ServerStatus{Message: "Loading model...", IsError: false}
+				statusChan <- ServerStatus{Message: "Loading model", IsError: false}
 			default:
 				statusChan <- ServerStatus{Message: fmt.Sprintf("Server not ready: %d", resp.StatusCode), IsError: true}
 			}

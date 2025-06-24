@@ -12,7 +12,7 @@ func TestLlamaServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start llama server: %v", err)
 	}
-	defer server.Stop()
+	t.Cleanup(server.Stop)
 
 	statusChan := server.StatusUpdates(context.Background())
 
