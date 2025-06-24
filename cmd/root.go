@@ -48,7 +48,7 @@ It allows you to use the nomodit series of models ( more about it here: https://
 				return
 			}
 			prompt := args[0]
-			server, err := llama.StartLlamaServer(LLM, "8091")
+			server, err := llama.StartServer(LLM, "8091")
 			if err != nil {
 				cmd.PrintErrln(dangerStyle.Render(err.Error()))
 				return

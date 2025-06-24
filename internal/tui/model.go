@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -9,10 +11,13 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/spf13/viper"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sergi/go-diff/diffmatchpatch"
+
+	"github.com/muzzlol/nomodit/pkg/llama"
+
+	"github.com/spf13/viper"
 )
 
 const (
@@ -34,9 +39,12 @@ var (
 	focusedInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("118")) // Lighter Green
 	blurredInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Gray
 	cursorStyle       = focusedInputStyle
-	accentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))  // Green
-	dangerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("124")) // Red
-	textStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("252")) // Light Gray
+	accentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))                    // Green
+	dangerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))                   // Red
+	warningStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))                   // Orange
+	textStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))                   // Light Gray
+	deletedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Strikethrough(true) // Bright Red
+	addedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))                    // Bright Green
 
 	submitFocusedButton = focusedButtonStyle.Render("[ Submit ]")
 	submitBlurredButton = blurredButtonStyle.Render("[ Submit ]")
@@ -44,12 +52,35 @@ var (
 	copyBlurredButton   = blurredButtonStyle.Render("[ Copy ]")
 )
 
+func diffing(og, new string) string {
+	dmp := diffmatchpatch.New()
+	diffs := dmp.DiffMain(og, new, false)
+	var sb strings.Builder
+	for _, diff := range diffs {
+		switch diff.Type {
+		case diffmatchpatch.DiffEqual:
+			sb.WriteString(textStyle.Render(diff.Text))
+		case diffmatchpatch.DiffInsert:
+			sb.WriteString(addedStyle.Render(diff.Text))
+		case diffmatchpatch.DiffDelete:
+			sb.WriteString(deletedStyle.Render(diff.Text))
+		}
+	}
+	return sb.String()
+}
+
 func Launch(instruction string) {
-	p := tea.NewProgram(InitialModel(instruction))
+	m := InitialModel(instruction)
+	defer func() {
+		if m.server != nil {
+			m.server.Stop()
+		}
+	}()
+
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
-
 }
 
 type Focusable interface {
@@ -124,6 +155,8 @@ func newFtextarea() *fTextarea {
 }
 
 type model struct {
+	server          *llama.Server
+	serverReady     bool
 	llm             string
 	title           string
 	currentState    state
@@ -133,7 +166,16 @@ type model struct {
 	keys            keyMap
 	suggestionsHelp help.Model
 	suggestionKeys  keyMap
+	statusChan      <-chan llama.ServerStatus
+	inferenceChan   <-chan llama.InferenceResp
+	isInferring     bool
+	inferenceResult string
 }
+
+type serverStatusMsg llama.ServerStatus
+type serverReadyMsg struct{}
+type inferenceMsg llama.InferenceResp
+type inferenceDoneMsg struct{}
 
 type keyMap struct {
 	Navigation key.Binding
@@ -179,10 +221,10 @@ var suggestionKeys = keyMap{
 
 type state struct {
 	text    string
-	spinner spinner.Spinner
+	spinner spinner.Model
 }
 
-func InitialModel(instruction string) model {
+func InitialModel(instruction string) *model {
 	// Create wrapper instances
 	output := newFtextarea()
 	output.Model.CharLimit = 500
@@ -206,12 +248,15 @@ func InitialModel(instruction string) model {
 	input.Model.SetWidth(100)
 	input.Model.SetHeight(5)
 
+	spinner := spinner.New(spinner.WithSpinner(spinner.Line), spinner.WithStyle(accentStyle))
+
 	m := model{
-		llm:   viper.GetString("llm"),
-		title: accentStyle.Render(title),
+		llm:         viper.GetString("llm"),
+		serverReady: false,
+		title:       accentStyle.Render(title),
 		currentState: state{
-			text:    textStyle.Render("helllllooo"),
-			spinner: spinner.Pulse,
+			text:    accentStyle.Render("helllllooo"),
+			spinner: spinner,
 		},
 		focusIndex:      1,                                        // instructions part
 		focusables:      []Focusable{output, instructions, input}, // Use the wrappers
@@ -220,19 +265,72 @@ func InitialModel(instruction string) model {
 		suggestionsHelp: help.New(),
 		suggestionKeys:  suggestionKeys,
 	}
-	return m
+	return &m
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case serverStatusMsg:
+		if msg.IsError {
+			m.currentState.text = dangerStyle.Render(msg.Message)
+			return m, tea.Quit
+		}
+		m.currentState.text = accentStyle.Render(msg.Message)
+		return m, m.checkServerStatus()
+	case serverReadyMsg:
+		m.serverReady = true
+		m.currentState.text = accentStyle.Render("Ready! model:", m.llm)
+	case inferenceMsg:
+		if msg.Stop {
+			if msg.Content != "" {
+				m.inferenceResult += msg.Content
+			}
+			return m, func() tea.Msg { return inferenceDoneMsg{} }
+		}
+
+		m.inferenceResult += msg.Content
+		op := m.focusables[0].(*fTextarea)
+		ip := m.focusables[2].(*fTextinput)
+		diff := diffing(ip.Model.Value(), m.inferenceResult)
+		op.Model.SetValue(diff)
+
+		return m, m.checkInference()
+	case inferenceDoneMsg:
+		m.isInferring = false
+		m.currentState.text = accentStyle.Render("Done!")
+		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.currentState.spinner, cmd = m.currentState.spinner.Update(msg)
+		return m, cmd
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
+			m.server.Stop()
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Submit):
 			if m.focusIndex == 0 {
 				// copy funcitonality
-			} else if m.focusIndex == len(m.focusables) {
+			} else if m.focusIndex == len(m.focusables) && !m.isInferring {
+				ip := m.focusables[2].(*fTextinput).Model.Value()
+				instructions := m.focusables[1].(*fTextinput).Model.Value()
+				if ip == "" {
+					m.currentState.text = warningStyle.Render("Enter text to submit")
+					return m, nil
+				}
+				m.isInferring = true
+				m.inferenceResult = ""
+				m.currentState.text = accentStyle.Render("Generating")
+				m.currentState.spinner = spinner.New(spinner.WithSpinner(spinner.Points), spinner.WithStyle(accentStyle))
+
+				prompt := fmt.Sprintf("%s\nInput:%s", instructions, ip)
+
+				req := llama.InferenceReq{
+					Prompt: prompt,
+					Temp:   0.2,
+				}
+
+				// TODO:
 				// submit functionality
 			}
 		case key.Matches(msg, m.keys.Navigation):
@@ -264,7 +362,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) updateFocusables(msg tea.Msg) tea.Cmd {
+func (m *model) updateFocusables(msg tea.Msg) tea.Cmd {
 	if m.focusIndex < 0 || m.focusIndex >= len(m.focusables) {
 		return nil // No command to issue for components in focusables
 	}
@@ -273,12 +371,49 @@ func (m model) updateFocusables(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
-func (m model) View() string {
+func (m *model) checkInference() tea.Cmd {
+	return func() tea.Msg {
+		res, ok := <-m.inferenceChan
+		if !ok {
+			return inferenceDoneMsg{}
+		}
+		return inferenceMsg(res)
+	}
+}
+
+func (m *model) checkServerStatus() tea.Cmd {
+	return func() tea.Msg {
+		status, ok := <-m.statusChan
+		if !ok {
+			return serverReadyMsg{}
+		}
+		return serverStatusMsg(status)
+	}
+}
+
+func (m *model) Init() tea.Cmd {
+	server, err := llama.StartServer(m.llm, "8091")
+	if err != nil {
+		m.currentState.text = dangerStyle.Render("Fatal: " + err.Error())
+		return tea.Quit
+	}
+	m.server = server
+	m.statusChan = m.server.StatusUpdates(context.Background())
+	return tea.Batch(
+		m.focusables[1].Focus(),
+		m.currentState.spinner.Tick,
+		m.checkServerStatus(),
+	)
+}
+
+func (m *model) View() string {
 	var s strings.Builder
 	s.WriteString(m.title)
 	s.WriteString("\n")
-	// add spinner
-	if m.currentState.text != "" {
+
+	if !m.serverReady {
+		s.WriteString(m.currentState.text + " " + m.currentState.spinner.View())
+	} else {
 		s.WriteString(m.currentState.text)
 	}
 	s.WriteString(gap)
@@ -323,8 +458,4 @@ func (m model) View() string {
 	s.WriteString(m.help.View(m.keys))
 
 	return s.String()
-}
-
-func (m model) Init() tea.Cmd {
-	return m.focusables[1].Focus()
 }
