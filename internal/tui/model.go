@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -70,7 +71,18 @@ func diffing(og, new string) string {
 	return sb.String()
 }
 
+func setupLogger() {
+	// Log to a file for debugging purposes
+	f, err := os.OpenFile("nomodit.log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	log.SetOutput(f)
+	log.Println("--- Log Start ---")
+}
+
 func Launch(instruction string) {
+	setupLogger()
 	m := InitialModel(instruction)
 	defer func() {
 		if m.server != nil {
