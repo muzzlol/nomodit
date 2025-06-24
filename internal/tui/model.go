@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -170,6 +171,7 @@ type model struct {
 	inferenceChan   <-chan llama.InferenceResp
 	isInferring     bool
 	inferenceResult string
+	output          viewport.Model
 }
 
 type serverStatusMsg llama.ServerStatus
@@ -181,15 +183,17 @@ type keyMap struct {
 	Navigation key.Binding
 	Submit     key.Binding
 	Quit       key.Binding
+	Scroll     key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Navigation, k.Submit, k.Quit}
+	return []key.Binding{k.Navigation, k.Submit, k.Quit, k.Scroll}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Navigation, k.Submit, k.Quit},
+		{k.Scroll},
 	}
 }
 
@@ -205,6 +209,10 @@ var keys = keyMap{
 	Quit: key.NewBinding(
 		key.WithKeys("ctrl+c", "esc"),
 		key.WithHelp("ctrl+c/esc", "quit"),
+	),
+	Scroll: key.NewBinding(
+		key.WithKeys("ctrl+u", "ctrl+d"),
+		key.WithHelp("ctrl+u/d", "scroll up/down the output"),
 	),
 }
 
@@ -226,10 +234,12 @@ type state struct {
 
 func InitialModel(instruction string) *model {
 	// Create wrapper instances
-	output := newFtextarea()
-	output.Model.CharLimit = 500
-	output.Model.SetWidth(100)
-	output.Model.SetHeight(20)
+	output := viewport.New(100, 20)
+	output.Style = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Width(100).
+		Height(20)
 
 	instructions := newFtextinput()
 	instructions.Model.SetValue(instruction)
@@ -255,15 +265,17 @@ func InitialModel(instruction string) *model {
 		serverReady: false,
 		title:       accentStyle.Render(title),
 		currentState: state{
-			text:    accentStyle.Render("helllllooo"),
+			text:    accentStyle.Render("hi"),
 			spinner: spinner,
 		},
-		focusIndex:      1,                                        // instructions part
-		focusables:      []Focusable{output, instructions, input}, // Use the wrappers
+		focusIndex:      0,                                // instructions part
+		focusables:      []Focusable{instructions, input}, // Use the wrappers
 		keys:            keys,
 		help:            help.New(),
 		suggestionsHelp: help.New(),
 		suggestionKeys:  suggestionKeys,
+		isInferring:     false,
+		output:          output,
 	}
 	return &m
 }
@@ -280,7 +292,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case serverReadyMsg:
 		m.serverReady = true
 		m.currentState.text = accentStyle.Render("Ready! model:", m.llm)
+		return m, nil
 	case inferenceMsg:
+		log.Print(msg.Content)
 		if msg.Stop {
 			if msg.Content != "" {
 				m.inferenceResult += msg.Content
@@ -289,10 +303,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.inferenceResult += msg.Content
-		op := m.focusables[0].(*fTextarea)
-		ip := m.focusables[2].(*fTextinput)
+		ip := m.focusables[1].(*fTextarea)
 		diff := diffing(ip.Model.Value(), m.inferenceResult)
-		op.Model.SetValue(diff)
+		m.output.SetContent(diff)
+		m.output.GotoBottom()
 
 		return m, m.checkInference()
 	case inferenceDoneMsg:
@@ -309,29 +323,45 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.server.Stop()
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Submit):
-			if m.focusIndex == 0 {
-				// copy funcitonality
+			if m.focusIndex == -1 {
+				// TODO: copy functionality
 			} else if m.focusIndex == len(m.focusables) && !m.isInferring {
-				ip := m.focusables[2].(*fTextinput).Model.Value()
-				instructions := m.focusables[1].(*fTextinput).Model.Value()
-				if ip == "" {
+				ip := m.focusables[1].(*fTextarea)
+
+				instructions := m.focusables[0].(*fTextinput).Model.Value()
+				if ip.Model.Value() == "" {
 					m.currentState.text = warningStyle.Render("Enter text to submit")
 					return m, nil
 				}
 				m.isInferring = true
 				m.inferenceResult = ""
+				m.output.SetContent("")
 				m.currentState.text = accentStyle.Render("Generating")
 				m.currentState.spinner = spinner.New(spinner.WithSpinner(spinner.Points), spinner.WithStyle(accentStyle))
 
-				prompt := fmt.Sprintf("%s\nInput:%s", instructions, ip)
+				prompt := fmt.Sprintf("Instruction: %s\nText to fix: \"%s\"\n\nRespond with ONLY the fixed text, without any additional explanations, comments, or introductory phrases like \"Fixed text:\".", instructions, ip.Model.Value())
 
 				req := llama.InferenceReq{
-					Prompt: prompt,
-					Temp:   0.2,
+					Prompt:   prompt,
+					Temp:     0.2,
+					NPredict: 200,
 				}
 
-				// TODO:
-				// submit functionality
+				var err error
+				m.inferenceChan, err = m.server.Inference(req)
+				if err != nil {
+					m.currentState.text = dangerStyle.Render(err.Error())
+					m.isInferring = false
+					return m, nil
+				}
+
+				return m, tea.Batch(m.currentState.spinner.Tick, m.checkInference())
+			}
+		case key.Matches(msg, m.keys.Scroll):
+			if msg.String() == "ctrl+u" {
+				m.output.ScrollUp(2)
+			} else {
+				m.output.ScrollDown(2)
 			}
 		case key.Matches(msg, m.keys.Navigation):
 			if msg.String() == "tab" {
@@ -400,7 +430,7 @@ func (m *model) Init() tea.Cmd {
 	m.server = server
 	m.statusChan = m.server.StatusUpdates(context.Background())
 	return tea.Batch(
-		m.focusables[1].Focus(),
+		m.focusables[0].Focus(),
 		m.currentState.spinner.Tick,
 		m.checkServerStatus(),
 	)
@@ -411,7 +441,7 @@ func (m *model) View() string {
 	s.WriteString(m.title)
 	s.WriteString("\n")
 
-	if !m.serverReady {
+	if !m.serverReady || m.isInferring {
 		s.WriteString(m.currentState.text + " " + m.currentState.spinner.View())
 	} else {
 		s.WriteString(m.currentState.text)
@@ -424,11 +454,11 @@ func (m *model) View() string {
 	}
 	s.WriteString("\n")
 
-	s.WriteString(m.focusables[0].View()) // output area
+	s.WriteString(m.output.View())
 	s.WriteString(gap)
 
 	var borderStyle lipgloss.Style
-	if m.focusIndex == 1 {
+	if m.focusIndex == 0 {
 		borderStyle = lipgloss.NewStyle().
 			Width(98).
 			Border(lipgloss.RoundedBorder()).
@@ -439,13 +469,13 @@ func (m *model) View() string {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")) // Gray border when blurred
 	}
-	s.WriteString(borderStyle.Render(m.focusables[1].View())) // instructions
-	if m.focusIndex == 1 {
+	s.WriteString(borderStyle.Render(m.focusables[0].View())) // instructions
+	if m.focusIndex == 0 {
 		s.WriteString("\n")
 		s.WriteString(m.suggestionsHelp.View(m.suggestionKeys))
 	}
 	s.WriteString("\n")
-	s.WriteString(m.focusables[2].View()) // input area
+	s.WriteString(m.focusables[1].View()) // input area
 	s.WriteString("\n")
 	// Submit Button
 	if m.focusIndex == len(m.focusables) {
