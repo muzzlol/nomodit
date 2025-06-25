@@ -33,7 +33,7 @@ const (
 var (
 	focusedButtonStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("255")). // White
-				Background(lipgloss.Color("34"))   // Green
+				Background(lipgloss.Color("37"))   // Teal/Cyan
 
 	blurredButtonStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("240")) // Gray
@@ -41,7 +41,7 @@ var (
 	focusedInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("118")) // Lighter Green
 	blurredInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Gray
 	cursorStyle       = focusedInputStyle
-	accentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))                    // Green
+	accentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("37"))                    // Teal/Cyan
 	dangerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("124"))                   // Red
 	warningStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))                   // Orange
 	textStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))                   // Light Gray
@@ -160,7 +160,7 @@ func newFtextarea() *fTextarea {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("240")) // Gray border
 
-	ta.FocusedStyle.Base = style.BorderForeground(lipgloss.Color("34")) // Green border
+	ta.FocusedStyle.Base = style.BorderForeground(lipgloss.Color("37")) // Teal/Cyan border
 	ta.BlurredStyle.Base = style
 	ta.Blur()
 
