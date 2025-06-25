@@ -115,7 +115,7 @@ func (s *Server) monitorErrors(statusChan chan<- ServerStatus) {
 		switch {
 		case strings.Contains(line, "trying to download model"):
 			llm := viper.GetString("llm")
-			statusChan <- ServerStatus{Message: fmt.Sprintf("Downloading model '%s', this can take a while", llm), IsError: false}
+			statusChan <- ServerStatus{Message: fmt.Sprintf("Downloading model '%s', this can take a while...", llm), IsError: false}
 		case strings.Contains(line, "error: model is private or does not exist; if you are accessing a gated model, please provide a valid HF token"):
 			statusChan <- ServerStatus{Message: "Model is private or does not exist; try using a different model", IsError: true}
 		case strings.Contains(line, "error:"):
@@ -275,6 +275,9 @@ func isModelCached(llm string, cacheDir string) (bool, error) {
 
 	for _, file := range files {
 		if !file.IsDir() && strings.HasPrefix(file.Name(), modelPrefix) {
+			if strings.HasSuffix(file.Name(), ".gguf.downloadInProgress") {
+				return false, nil
+			}
 			return true, nil
 		}
 	}
