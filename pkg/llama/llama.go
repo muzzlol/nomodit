@@ -8,10 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 type ServerStatus struct {
@@ -20,10 +25,11 @@ type ServerStatus struct {
 }
 
 type Server struct {
-	llamaCmd *exec.Cmd
-	port     string
-	baseURL  string
-	stderr   io.ReadCloser
+	llamaCmd      *exec.Cmd
+	port          string
+	baseURL       string
+	stderr        io.ReadCloser
+	isModelCached bool
 }
 
 type InferenceReq struct {
@@ -44,6 +50,14 @@ func StartServer(llm string, port string) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("llama-server not found: %w", err)
 	}
+
+	cacheDir, err := getCacheDir()
+	var isCached bool
+	if err == nil {
+		// we can ignore the error here, if we can't check, we'll just assume it's not cached
+		isCached, _ = isModelCached(llm, cacheDir)
+	}
+
 	args := []string{"-hf", llm, "--port", port}
 	cmd := exec.Command(llamaCmd, args...)
 
@@ -53,10 +67,11 @@ func StartServer(llm string, port string) (*Server, error) {
 	}
 
 	server := &Server{
-		llamaCmd: cmd,
-		port:     port,
-		baseURL:  fmt.Sprintf("http://localhost:%s", port),
-		stderr:   stderr,
+		llamaCmd:      cmd,
+		port:          port,
+		baseURL:       fmt.Sprintf("http://localhost:%s", port),
+		stderr:        stderr,
+		isModelCached: isCached,
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -76,6 +91,9 @@ func (s *Server) StatusUpdates(ctx context.Context) <-chan ServerStatus {
 			close(statusChan)
 		}()
 
+		if !s.isModelCached {
+			statusChan <- ServerStatus{Message: "Model not cached, download required..."}
+		}
 		statusChan <- ServerStatus{Message: "Starting llama-server"}
 
 		wg.Add(1)
@@ -95,6 +113,9 @@ func (s *Server) monitorErrors(statusChan chan<- ServerStatus) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch {
+		case strings.Contains(line, "trying to download model"):
+			llm := viper.GetString("llm")
+			statusChan <- ServerStatus{Message: fmt.Sprintf("Downloading model '%s', this can take a while", llm), IsError: false}
 		case strings.Contains(line, "error: model is private or does not exist; if you are accessing a gated model, please provide a valid HF token"):
 			statusChan <- ServerStatus{Message: "Model is private or does not exist; try using a different model", IsError: true}
 		case strings.Contains(line, "error:"):
@@ -108,14 +129,21 @@ func (s *Server) monitorHealth(ctx context.Context, statusChan chan<- ServerStat
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 
-	timeout := time.After(30 * time.Second)
+	var timeout time.Duration
+	if s.isModelCached {
+		timeout = 30 * time.Second
+	} else {
+		timeout = 30 * time.Minute
+	}
+	timeoutChan := time.After(timeout)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-timeout:
+		case <-timeoutChan:
 			statusChan <- ServerStatus{Message: "Server startup timed out", IsError: true}
+			return
 		case <-ticker.C:
 			resp, err := http.Get(healthURL)
 			if err != nil {
@@ -197,4 +225,59 @@ func (s *Server) Inference(req InferenceReq) (<-chan InferenceResp, error) {
 	}()
 
 	return respChan, nil
+}
+
+func getCacheDir() (string, error) {
+	if cacheDir := os.Getenv("LLAMA_CACHE"); cacheDir != "" {
+		return cacheDir, nil
+	}
+
+	var baseDir string
+
+	switch runtime.GOOS {
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		baseDir = filepath.Join(home, "Library", "Caches")
+	case "windows":
+		baseDir = os.Getenv("LOCALAPPDATA")
+		if baseDir == "" {
+			return "", fmt.Errorf("LOCALAPPDATA environment variable not set")
+		}
+	default: // assuming linux-like
+		if cacheHome := os.Getenv("XDG_CACHE_HOME"); cacheHome != "" {
+			baseDir = cacheHome
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			baseDir = filepath.Join(home, ".cache")
+		}
+	}
+
+	return filepath.Join(baseDir, "llama.cpp"), nil
+}
+
+func isModelCached(llm string, cacheDir string) (bool, error) {
+	// e.g. unsloth/Qwen3-1.7B-GGUF -> unsloth_Qwen3-1.7B-GGUF
+	modelPrefix := strings.ReplaceAll(llm, "/", "_")
+
+	files, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // Cache directory doesn't exist, so model isn't cached
+		}
+		return false, err
+	}
+
+	for _, file := range files {
+		if !file.IsDir() && strings.HasPrefix(file.Name(), modelPrefix) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

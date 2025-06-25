@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -23,8 +24,10 @@ import (
 )
 
 const (
-	gap   = "\n\n"
-	title = `
+	renderFps      = 20
+	renderInterval = time.Second / renderFps
+	gap            = "\n\n"
+	title          = `
   /|/_ _ _ _ _/._/_
  / /_/ / /_/_// /
 	`
@@ -38,7 +41,7 @@ var (
 	blurredButtonStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("240")) // Gray
 
-	focusedInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("118")) // Lighter Green
+	focusedInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("51"))  // Lighter Teal/Cyan
 	blurredInputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Gray
 	cursorStyle       = focusedInputStyle
 	accentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("37"))                    // Teal/Cyan
@@ -53,6 +56,26 @@ var (
 	copyFocusedButton   = focusedButtonStyle.Render("[ Copy ]")
 	copyBlurredButton   = blurredButtonStyle.Render("[ Copy ]")
 )
+
+type model struct {
+	server           *llama.Server
+	serverReady      bool
+	llm              string
+	title            string
+	currentState     state
+	focusIndex       int
+	focusables       []Focusable
+	help             help.Model
+	keys             keyMap
+	suggestionsHelp  help.Model
+	suggestionKeys   keyMap
+	statusChan       <-chan llama.ServerStatus
+	inferenceChan    <-chan llama.InferenceResp
+	isInferring      bool
+	inferenceBuilder strings.Builder
+	isOutputDirty    bool
+	output           viewport.Model
+}
 
 func diffing(og, new string) string {
 	dmp := diffmatchpatch.New()
@@ -167,45 +190,28 @@ func newFtextarea() *fTextarea {
 	return &fTextarea{Model: &ta}
 }
 
-type model struct {
-	server          *llama.Server
-	serverReady     bool
-	llm             string
-	title           string
-	currentState    state
-	focusIndex      int
-	focusables      []Focusable
-	help            help.Model
-	keys            keyMap
-	suggestionsHelp help.Model
-	suggestionKeys  keyMap
-	statusChan      <-chan llama.ServerStatus
-	inferenceChan   <-chan llama.InferenceResp
-	isInferring     bool
-	inferenceResult string
-	output          viewport.Model
-}
-
 type serverStatusMsg llama.ServerStatus
 type serverReadyMsg struct{}
 type inferenceMsg llama.InferenceResp
 type inferenceDoneMsg struct{}
+type renderTickMsg struct{}
 
 type keyMap struct {
 	Navigation key.Binding
 	Submit     key.Binding
 	Quit       key.Binding
 	Scroll     key.Binding
+	Clear      key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Navigation, k.Submit, k.Quit, k.Scroll}
+	return []key.Binding{k.Navigation, k.Submit, k.Quit, k.Scroll, k.Clear}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Navigation, k.Submit, k.Quit},
-		{k.Scroll},
+		{k.Scroll, k.Clear},
 	}
 }
 
@@ -225,6 +231,10 @@ var keys = keyMap{
 	Scroll: key.NewBinding(
 		key.WithKeys("ctrl+u", "ctrl+d"),
 		key.WithHelp("ctrl+u/d", "scroll up/down the output"),
+	),
+	Clear: key.NewBinding(
+		key.WithKeys("ctrl+l"),
+		key.WithHelp("ctrl+l", "clear input"),
 	),
 }
 
@@ -266,7 +276,7 @@ func InitialModel(instruction string) *model {
 
 	input := newFtextarea()
 	input.Model.Placeholder = "Enter your text here"
-	input.Model.CharLimit = 500
+	input.Model.CharLimit = 0
 	input.Model.SetWidth(100)
 	input.Model.SetHeight(5)
 
@@ -287,9 +297,16 @@ func InitialModel(instruction string) *model {
 		suggestionsHelp: help.New(),
 		suggestionKeys:  suggestionKeys,
 		isInferring:     false,
+		isOutputDirty:   false,
 		output:          output,
 	}
 	return &m
+}
+
+func renderTick() tea.Cmd {
+	return tea.Tick(renderInterval, func(t time.Time) tea.Msg {
+		return renderTickMsg{}
+	})
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -309,18 +326,33 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		log.Print(msg.Content)
 		if msg.Stop {
 			if msg.Content != "" {
-				m.inferenceResult += msg.Content
+				m.inferenceBuilder.WriteString(msg.Content)
+			}
+			// final diff
+			if m.isOutputDirty {
+				ip := m.focusables[1].(*fTextarea)
+				diff := diffing(ip.Model.Value(), m.inferenceBuilder.String())
+				m.output.SetContent(diff)
+				m.output.GotoBottom()
 			}
 			return m, func() tea.Msg { return inferenceDoneMsg{} }
 		}
 
-		m.inferenceResult += msg.Content
-		ip := m.focusables[1].(*fTextarea)
-		diff := diffing(ip.Model.Value(), m.inferenceResult)
-		m.output.SetContent(diff)
-		m.output.GotoBottom()
+		m.inferenceBuilder.WriteString(msg.Content)
+		m.isOutputDirty = true
 
 		return m, m.checkInference()
+	case renderTickMsg:
+		if !m.isInferring {
+			return m, nil
+		}
+		if m.isOutputDirty {
+			ip := m.focusables[1].(*fTextarea)
+			diff := diffing(ip.Model.Value(), m.inferenceBuilder.String())
+			m.output.SetContent(diff)
+			m.output.GotoBottom()
+			m.isOutputDirty = false
+		}
 	case inferenceDoneMsg:
 		m.isInferring = false
 		m.currentState.text = accentStyle.Render("Done!")
@@ -346,7 +378,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.isInferring = true
-				m.inferenceResult = ""
+				m.inferenceBuilder.Reset()
+				m.isOutputDirty = false
 				m.output.SetContent("")
 				m.currentState.text = accentStyle.Render("Generating")
 				m.currentState.spinner = spinner.New(spinner.WithSpinner(spinner.Points), spinner.WithStyle(accentStyle))
@@ -367,8 +400,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
-				return m, tea.Batch(m.currentState.spinner.Tick, m.checkInference())
+				return m, tea.Batch(m.currentState.spinner.Tick, m.checkInference(), renderTick())
 			}
+		case key.Matches(msg, m.keys.Clear):
+			m.focusables[1].(*fTextarea).Model.Reset()
 		case key.Matches(msg, m.keys.Scroll):
 			if msg.String() == "ctrl+u" {
 				m.output.ScrollUp(2)
@@ -474,7 +509,7 @@ func (m *model) View() string {
 		borderStyle = lipgloss.NewStyle().
 			Width(98).
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("118")) // Lighter Green border when focused
+			BorderForeground(lipgloss.Color("51")) // Lighter Teal/Cyan border when focused
 	} else {
 		borderStyle = lipgloss.NewStyle().
 			Width(98).
