@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -24,10 +23,8 @@ import (
 )
 
 const (
-	renderFps      = 20
-	renderInterval = time.Second / renderFps
-	gap            = "\n\n"
-	title          = `
+	gap   = "\n\n"
+	title = `
   /|/_ _ _ _ _/._/_
  / /_/ / /_/_// /
 	`
@@ -73,7 +70,6 @@ type model struct {
 	inferenceChan    <-chan llama.InferenceResp
 	isInferring      bool
 	inferenceBuilder strings.Builder
-	isOutputDirty    bool
 	output           viewport.Model
 }
 
@@ -194,7 +190,6 @@ type serverStatusMsg llama.ServerStatus
 type serverReadyMsg struct{}
 type inferenceMsg llama.InferenceResp
 type inferenceDoneMsg struct{}
-type renderTickMsg struct{}
 
 type keyMap struct {
 	Navigation key.Binding
@@ -297,16 +292,9 @@ func InitialModel(instruction string) *model {
 		suggestionsHelp: help.New(),
 		suggestionKeys:  suggestionKeys,
 		isInferring:     false,
-		isOutputDirty:   false,
 		output:          output,
 	}
 	return &m
-}
-
-func renderTick() tea.Cmd {
-	return tea.Tick(renderInterval, func(t time.Time) tea.Msg {
-		return renderTickMsg{}
-	})
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -320,7 +308,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.checkServerStatus()
 	case serverReadyMsg:
 		m.serverReady = true
-		m.currentState.text = accentStyle.Render("Ready! model:", m.llm)
+		m.currentState.text = accentStyle.Render("Ready! model: " + m.llm)
 		return m, nil
 	case inferenceMsg:
 		log.Print(msg.Content)
@@ -328,31 +316,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Content != "" {
 				m.inferenceBuilder.WriteString(msg.Content)
 			}
-			// final diff
-			if m.isOutputDirty {
-				ip := m.focusables[1].(*fTextarea)
-				diff := diffing(ip.Model.Value(), m.inferenceBuilder.String())
-				m.output.SetContent(diff)
-				m.output.GotoBottom()
-			}
-			return m, func() tea.Msg { return inferenceDoneMsg{} }
-		}
-
-		m.inferenceBuilder.WriteString(msg.Content)
-		m.isOutputDirty = true
-
-		return m, m.checkInference()
-	case renderTickMsg:
-		if !m.isInferring {
-			return m, nil
-		}
-		if m.isOutputDirty {
 			ip := m.focusables[1].(*fTextarea)
 			diff := diffing(ip.Model.Value(), m.inferenceBuilder.String())
 			m.output.SetContent(diff)
 			m.output.GotoBottom()
-			m.isOutputDirty = false
+			return m, func() tea.Msg { return inferenceDoneMsg{} }
 		}
+
+		m.inferenceBuilder.WriteString(msg.Content)
+		return m, m.checkInference()
 	case inferenceDoneMsg:
 		m.isInferring = false
 		m.currentState.text = accentStyle.Render("Done!")
@@ -370,6 +342,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focusIndex == -1 {
 				// TODO: copy functionality
 			} else if m.focusIndex == len(m.focusables) && !m.isInferring {
+				if !m.serverReady || m.isInferring {
+					return m, nil
+				}
 				ip := m.focusables[1].(*fTextarea)
 
 				instructions := m.focusables[0].(*fTextinput).Model.Value()
@@ -379,7 +354,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.isInferring = true
 				m.inferenceBuilder.Reset()
-				m.isOutputDirty = false
 				m.output.SetContent("")
 				m.currentState.text = accentStyle.Render("Generating")
 				m.currentState.spinner = spinner.New(spinner.WithSpinner(spinner.Points), spinner.WithStyle(accentStyle))
@@ -400,7 +374,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
-				return m, tea.Batch(m.currentState.spinner.Tick, m.checkInference(), renderTick())
+				return m, tea.Batch(m.currentState.spinner.Tick, m.checkInference())
 			}
 		case key.Matches(msg, m.keys.Clear):
 			m.focusables[1].(*fTextarea).Model.Reset()
