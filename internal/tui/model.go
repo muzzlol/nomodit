@@ -385,7 +385,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.currentState.spinner.Tick, m.checkInference())
 			}
 		case key.Matches(msg, m.keys.Clear):
-			m.focusables[1].(*fTextarea).Model.Reset()
+			if m.focusIndex == 0 {
+				m.focusables[0].(*fTextinput).Model.Reset()
+			} else {
+				m.focusables[1].(*fTextarea).Model.Reset()
+			}
 		case key.Matches(msg, m.keys.Scroll):
 			if msg.String() == "ctrl+u" {
 				m.output.ScrollUp(2)
