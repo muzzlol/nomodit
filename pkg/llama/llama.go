@@ -133,7 +133,7 @@ func (s *Server) monitorHealth(ctx context.Context, statusChan chan<- ServerStat
 	if s.isModelCached {
 		timeout = 30 * time.Second
 	} else {
-		timeout = 30 * time.Minute
+		timeout = 4 * time.Hour
 	}
 	timeoutChan := time.After(timeout)
 

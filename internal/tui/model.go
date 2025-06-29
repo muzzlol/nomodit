@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"github.com/muzzlol/nomodit/pkg/llama"
@@ -76,18 +77,24 @@ type model struct {
 func diffing(og, new string) string {
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(og, new, false)
-	var sb strings.Builder
+	s := wordwrap.NewWriter(100)
 	for _, diff := range diffs {
+		var text string
 		switch diff.Type {
 		case diffmatchpatch.DiffEqual:
-			sb.WriteString(textStyle.Render(diff.Text))
+			text = textStyle.Render(diff.Text)
 		case diffmatchpatch.DiffInsert:
-			sb.WriteString(addedStyle.Render(diff.Text))
+			text = addedStyle.Render(diff.Text)
 		case diffmatchpatch.DiffDelete:
-			sb.WriteString(deletedStyle.Render(diff.Text))
+			text = deletedStyle.Render(diff.Text)
+		}
+		_, err := s.Write([]byte(text))
+		if err != nil {
+			log.Printf("error writing to wordwrap buffer: %v", err)
 		}
 	}
-	return sb.String()
+	_ = s.Close()
+	return s.String()
 }
 
 func setupLogger() {
@@ -322,8 +329,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.output.GotoBottom()
 			return m, func() tea.Msg { return inferenceDoneMsg{} }
 		}
-
 		m.inferenceBuilder.WriteString(msg.Content)
+		m.output.SetContent(m.inferenceBuilder.String())
+		m.output.GotoBottom()
 		return m, m.checkInference()
 	case inferenceDoneMsg:
 		m.isInferring = false
