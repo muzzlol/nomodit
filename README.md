@@ -40,4 +40,5 @@ nomodit is also the name of a series of fine-tuned version of Google's Gemma 3n 
 
 The training runs for fine-tuning the models with unsloth's FastModel framework utlize PEFT techniques like QLoRA and add reasoning capabilites by using GRPO and rubrics as rewards for language tasks which are inherently non-verifiable.
 
-> **Note:** You can find the subsequent notebooks and the benchmarking against other models [here](https://github.com/muzzlol/nomodit-training). This work is currently in progress.
+You can find the subsequent notebooks for training the model, creating the reasoning traces using a larger llm and the benchmarking against other models on GEC [here](https://github.com/muzzlol/nomodit-training).
+> **Note:** This work is currently in progress.
