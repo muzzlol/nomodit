@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -72,6 +73,7 @@ type model struct {
 	isInferring      bool
 	inferenceBuilder strings.Builder
 	output           viewport.Model
+	response         string
 	width            int
 	height           int
 }
@@ -329,7 +331,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inferenceBuilder.WriteString(msg.Content)
 			}
 			ip := m.focusables[1].(*fTextarea)
-			diff := diffing(ip.Model.Value(), m.inferenceBuilder.String())
+			response := m.inferenceBuilder.String()
+			diff := diffing(ip.Model.Value(), response)
+			m.response = response
 			m.output.SetContent(diff)
 			m.output.GotoBottom()
 			return m, func() tea.Msg { return inferenceDoneMsg{} }
@@ -366,7 +370,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Submit):
 			if m.focusIndex == -1 {
-				// TODO: copy functionality
+				if m.response == "" {
+					m.currentState.text = warningStyle.Render("No response to copy")
+					return m, nil
+				}
+				err := clipboard.WriteAll(m.response)
+				if err != nil {
+					m.currentState.text = dangerStyle.Render("Error copying to clipboard: " + err.Error())
+				} else {
+					m.currentState.text = accentStyle.Render("Copied response to clipboard!")
+				}
+				return m, nil
 			} else if m.focusIndex == len(m.focusables) && !m.isInferring {
 				if !m.serverReady || m.isInferring {
 					return m, nil
