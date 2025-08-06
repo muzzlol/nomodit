@@ -72,6 +72,8 @@ type model struct {
 	isInferring      bool
 	inferenceBuilder strings.Builder
 	output           viewport.Model
+	width            int
+	height           int
 }
 
 func diffing(og, new string) string {
@@ -300,6 +302,8 @@ func InitialModel(instruction string) *model {
 		suggestionKeys:  suggestionKeys,
 		isInferring:     false,
 		output:          output,
+		width:           100,
+		height:          24,
 	}
 	return &m
 }
@@ -341,6 +345,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.currentState.spinner, cmd = m.currentState.spinner.Update(msg)
 		return m, cmd
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		// Update viewport width to be responsive
+		viewportWidth := min(100, m.width-4) // 4 for padding
+		m.output.Width = viewportWidth
+		// Update input width
+		if len(m.focusables) > 1 {
+			if ta, ok := m.focusables[1].(*fTextarea); ok {
+				ta.Model.SetWidth(viewportWidth)
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
@@ -469,56 +486,92 @@ func (m *model) Init() tea.Cmd {
 	)
 }
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func (m *model) View() string {
 	var s strings.Builder
-	s.WriteString(m.title)
+
+	// Calculate responsive width
+	contentWidth := min(100, m.width-4) // Leave some margin
+	if contentWidth < 50 {
+		contentWidth = 50 // Minimum width
+	}
+
+	// Center the title
+	centeredTitle := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, m.title)
+	s.WriteString(centeredTitle)
 	s.WriteString("\n")
 
+	// Center the status line
+	statusText := m.currentState.text
 	if !m.serverReady || m.isInferring {
-		s.WriteString(m.currentState.text + " " + m.currentState.spinner.View())
-	} else {
-		s.WriteString(m.currentState.text)
+		statusText += " " + m.currentState.spinner.View()
 	}
+	centeredStatus := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, statusText)
+	s.WriteString(centeredStatus)
 	s.WriteString(gap)
+
+	// Center the copy button
+	copyButton := copyBlurredButton
 	if m.focusIndex == -1 {
-		s.WriteString(copyFocusedButton)
-	} else {
-		s.WriteString(copyBlurredButton)
+		copyButton = copyFocusedButton
 	}
+	centeredCopyButton := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, copyButton)
+	s.WriteString(centeredCopyButton)
 	s.WriteString("\n")
 
-	s.WriteString(m.output.View())
+	// Center the output viewport
+	centeredOutput := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, m.output.View())
+	s.WriteString(centeredOutput)
 	s.WriteString(gap)
 
+	// Center the instructions input with border
 	var borderStyle lipgloss.Style
+	instructionWidth := min(98, contentWidth-2)
 	if m.focusIndex == 0 {
 		borderStyle = lipgloss.NewStyle().
-			Width(98).
+			Width(instructionWidth).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("51")) // Lighter Teal/Cyan border when focused
 	} else {
 		borderStyle = lipgloss.NewStyle().
-			Width(98).
+			Width(instructionWidth).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")) // Gray border when blurred
 	}
-	s.WriteString(borderStyle.Render(m.focusables[0].View())) // instructions
+	instructionsWithBorder := borderStyle.Render(m.focusables[0].View())
+	centeredInstructions := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, instructionsWithBorder)
+	s.WriteString(centeredInstructions)
+
 	if m.focusIndex == 0 {
 		s.WriteString("\n")
-		s.WriteString(m.suggestionsHelp.View(m.suggestionKeys))
+		centeredSuggestionHelp := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, m.suggestionsHelp.View(m.suggestionKeys))
+		s.WriteString(centeredSuggestionHelp)
 	}
 	s.WriteString("\n")
-	s.WriteString(m.focusables[1].View()) // input area
+
+	// Center the input area
+	centeredInput := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, m.focusables[1].View())
+	s.WriteString(centeredInput)
 	s.WriteString("\n")
-	// Submit Button
+
+	// Center the submit button
+	submitButton := submitBlurredButton
 	if m.focusIndex == len(m.focusables) {
-		s.WriteString(submitFocusedButton)
-	} else {
-		s.WriteString(submitBlurredButton)
+		submitButton = submitFocusedButton
 	}
+	centeredSubmit := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, submitButton)
+	s.WriteString(centeredSubmit)
 	s.WriteString(gap)
-	// Help
-	s.WriteString(m.help.View(m.keys))
+
+	// Center the help
+	centeredHelp := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, m.help.View(m.keys))
+	s.WriteString(centeredHelp)
 
 	return s.String()
 }
