@@ -79,6 +79,7 @@ type model struct {
 func diffing(og, new string) string {
 	dmp := diffmatchpatch.New()
 	diffs := dmp.DiffMain(og, new, false)
+	diffs = dmp.DiffCleanupSemantic(diffs)
 	s := wordwrap.NewWriter(98)
 	for _, diff := range diffs {
 		var text string
